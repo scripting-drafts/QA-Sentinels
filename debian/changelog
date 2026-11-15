@@ -1,3 +1,13 @@
+qa-sentinels (1.1.1) jammy; urgency=medium
+
+  * Make the fault-core integration optional and report its state in status
+    and preflight.
+  * Accept non-numeric settings only from a typed whitelist, so
+    config/settings.json cannot inject arbitrary environment values.
+  * Document every Linux install path, including the local .deb.
+
+ -- Gerard Sala <creative.gsp@gmail.com>  Sun, 15 Nov 2026 21:25:00 +0100
+
 qa-sentinels (1.1.0) jammy; urgency=medium
 
   * Initial APT package: per-user QA Sentinels CLI seed and workspace
