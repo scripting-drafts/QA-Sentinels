@@ -137,17 +137,31 @@ the database or printed.
 }
 ```
 
-## Fault-core isolation policy
+## Optional fault-core isolation policy
 
 The hardware sources above cover error counters. A separate layer-1 check
-covers the policy that keeps the degrading core out of normal work.
+covers the policy that keeps a degrading core out of normal work. This
+integration is **optional**; faultlab is not a prerequisite for QA Sentinels.
 
 The fault core is identified by the logical CPU set in
 `/etc/faultlab/config` (`FAULT_CPUS`) or `QA_FAULT_CORE_CPUS`; its physical
 core number is derived from sysfs only while those CPUs are online. A retired
 core therefore stays **undetermined** — QA knows which CPUs are offline but
 does not invent a physical core id. With no fault core configured, these
-checks are disabled.
+checks are disabled and normal sampling, reporting, evidence collection and
+tickets continue.
+
+### Standalone mode
+
+`QA_FAULT_CORE_ENABLE=auto` (default) enables the checks only when
+`FAULT_CPUS` is available from `/etc/faultlab/config` or
+`QA_FAULT_CORE_CPUS`; otherwise they stay disabled. Set
+`QA_FAULT_CORE_ENABLE=0` to disable explicitly, or `1` to require a configured
+core. The value can be placed in `config/settings.json` or the service
+environment. `QA_FAULT_CORE_CPUS` and the faultlab paths remain
+environment/faultlab inputs, not settings-file values. `QA_FAULT_CORE_ENFORCE`
+only overrides how the mode file is interpreted; it does not enable the
+integration.
 
 `/etc/faultlab/mode` selects `retired` (configured CPUs offlined) or `lab`
 (online, isolated, cgroup-fenced). `QA_FAULT_CORE_ENFORCE=lab|retired|off`

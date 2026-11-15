@@ -2789,7 +2789,7 @@ class NotificationTraceCrosscheckTests(unittest.TestCase):
 
 
 class SettingsConfigTests(unittest.TestCase):
-    def test_dashboard_settings_file_only_accepts_numbers(self):
+    def test_dashboard_settings_file_accepts_numbers_and_typed_faultcore_enums(self):
         import json
         import os
         import pathlib
@@ -2800,6 +2800,8 @@ class SettingsConfigTests(unittest.TestCase):
         keys = (
             "QA_EVENT_RETENTION_DAYS", "QA_CYCLE_RAISE_HOURS",
             "QA_PRIVILEGED", "QA_BAD", "NOT_QA", "QA_SAMPLE_RETENTION_DAYS",
+            "QA_FAULT_CORE_ENABLE", "QA_FAULT_CORE_ENFORCE",
+            "QA_FAULT_CORE_CPUS",
         )
         with tempfile.TemporaryDirectory() as tmp:
             path = pathlib.Path(tmp) / "settings.json"
@@ -2809,18 +2811,47 @@ class SettingsConfigTests(unittest.TestCase):
                 "QA_PRIVILEGED": "rm -rf /",
                 "QA_BAD": "12; echo pwned",
                 "NOT_QA": 1,
+                "QA_FAULT_CORE_ENABLE": "0",
+                "QA_FAULT_CORE_ENFORCE": "lab",
+                "QA_FAULT_CORE_CPUS": "2,8",
             }), encoding="utf-8")
             clean = {key: value for key, value in os.environ.items()
                      if key not in keys}
             clean["QA_SAMPLE_RETENTION_DAYS"] = "5"
+            clean["QA_FAULT_CORE_ENFORCE"] = "retired"
             with mock.patch.dict(os.environ, clean, clear=True):
                 config.apply_settings_file(path)
                 self.assertEqual(os.environ["QA_EVENT_RETENTION_DAYS"], "12")
                 self.assertEqual(os.environ["QA_CYCLE_RAISE_HOURS"], "2.5")
                 self.assertEqual(os.environ["QA_SAMPLE_RETENTION_DAYS"], "5")
+                self.assertEqual(os.environ["QA_FAULT_CORE_ENABLE"], "0")
+                self.assertEqual(os.environ["QA_FAULT_CORE_ENFORCE"], "retired")
+                self.assertNotIn("QA_FAULT_CORE_CPUS", os.environ)
                 self.assertNotIn("QA_PRIVILEGED", os.environ)
                 self.assertNotIn("QA_BAD", os.environ)
                 self.assertNotIn("NOT_QA", os.environ)
+
+    def test_dashboard_settings_file_rejects_invalid_faultcore_enums(self):
+        import json
+        import os
+        import pathlib
+        import tempfile
+        from unittest import mock
+        from sentinels import config
+
+        keys = ("QA_FAULT_CORE_ENABLE", "QA_FAULT_CORE_ENFORCE")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "settings.json"
+            path.write_text(json.dumps({
+                "QA_FAULT_CORE_ENABLE": "maybe",
+                "QA_FAULT_CORE_ENFORCE": "bogus",
+            }), encoding="utf-8")
+            clean = {key: value for key, value in os.environ.items()
+                     if key not in keys}
+            with mock.patch.dict(os.environ, clean, clear=True):
+                config.apply_settings_file(path)
+                self.assertNotIn("QA_FAULT_CORE_ENABLE", os.environ)
+                self.assertNotIn("QA_FAULT_CORE_ENFORCE", os.environ)
 
     def test_zero_retention_keeps_events_until_changed(self):
         import sqlite3

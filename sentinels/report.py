@@ -222,6 +222,8 @@ def _lsm_section(conn) -> str:
 
 
 def _faultcore_section(conn, since_iso: str) -> str:
+    if not config.FAULT_CORE_ENABLE or not config.FAULT_CORE_CPUS:
+        return "## Fault-core integration\n\n" + faultcore.integration_state() + "."
     crashes = crashes_since(conn, since_iso)
     yes = [c for c in crashes if c["faultcore_involved"] == 1]
     no = [c for c in crashes if c["faultcore_involved"] == 0]

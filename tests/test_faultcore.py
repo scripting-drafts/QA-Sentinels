@@ -1,10 +1,13 @@
 """Tests for fault-core topology and ticket presence reporting."""
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from sentinels import config, faultcore, tickets
+from sentinels import config, faultcore, report, tickets
 
 
 class ConfigParsingTests(unittest.TestCase):
@@ -25,6 +28,79 @@ class ConfigParsingTests(unittest.TestCase):
 
     def test_cpu_tuple_accepts_ranges(self):
         self.assertEqual(config._cpu_tuple("0-1,3,8-9"), (0, 1, 3, 8, 9))
+
+    def test_missing_faultlab_config_is_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(
+                config._faultlab_values(Path(tmp) / "missing"),
+                {},
+            )
+
+
+class StandaloneIntegrationTests(unittest.TestCase):
+    def test_disabled_integration_is_explicit(self):
+        with mock.patch.object(config, "FAULT_CORE_ENABLE", False), \
+             mock.patch.object(config, "FAULT_CORE_CPUS", ()):
+            state = faultcore.integration_state()
+            self.assertIn("disabled", state)
+            self.assertIn("optional", state)
+            topo = faultcore.topology()
+            self.assertEqual(topo["state"], "unconfigured")
+            self.assertIn("not configured", faultcore.presence(topo))
+            self.assertEqual(faultcore.findings(None), [])
+            section = report._faultcore_section(None, "2026-01-01T00:00:00Z")
+            self.assertIn("Fault-core integration", section)
+            self.assertIn("disabled", section)
+
+    def test_disabled_by_configuration_with_cpus(self):
+        with mock.patch.object(config, "FAULT_CORE_ENABLE", False), \
+             mock.patch.object(config, "FAULT_CORE_CPUS", (2, 8)):
+            self.assertEqual(
+                faultcore.integration_state(),
+                "disabled by configuration",
+            )
+
+    def test_enabled_without_cpus(self):
+        with mock.patch.object(config, "FAULT_CORE_ENABLE", True), \
+             mock.patch.object(config, "FAULT_CORE_CPUS", ()):
+            self.assertIn("no fault CPUs", faultcore.integration_state())
+            self.assertEqual(faultcore.findings(None), [])
+
+    def test_auto_detection_without_faultlab_config(self):
+        repo = Path(__file__).resolve().parents[1]
+        base = {
+            key: value for key, value in os.environ.items()
+            if key not in {
+                "QA_FAULT_CORE_CPUS", "QA_FAULT_CPUS", "QA_CORE2_CPUS",
+                "QA_FAULT_CORE_ENABLE", "QA_FAULT_CORE_ENFORCE",
+            }
+        }
+        base.update({
+            "PYTHONPATH": str(repo),
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "QA_SENTINELS_HOME": str(repo),
+            "QA_FAULTLAB_CONFIG": "/nonexistent",
+            "QA_FAULT_CORE_ENABLE": "auto",
+        })
+        code = (
+            "from sentinels import config; "
+            "print(config.FAULT_CORE_ENABLE, config.FAULT_CORE_CPUS)"
+        )
+
+        def run(extra):
+            env = dict(base)
+            env.update(extra)
+            return subprocess.check_output(
+                [sys.executable, "-c", code],
+                cwd=repo, env=env, text=True,
+            ).strip()
+
+        self.assertEqual(run({}), "False ()")
+        self.assertEqual(run({"QA_FAULT_CORE_CPUS": "2,8"}), "True (2, 8)")
+        self.assertEqual(
+            run({"QA_FAULT_CORE_CPUS": "2,8", "QA_FAULT_CORE_ENABLE": "0"}),
+            "False (2, 8)",
+        )
 
 
 class TopologyTests(unittest.TestCase):

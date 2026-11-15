@@ -641,7 +641,7 @@ def cmd_status(args) -> int:
         events = scalar("SELECT COUNT(*) FROM events")
         critical = scalar("SELECT COUNT(*) FROM events WHERE severity='critical'")
         crashes = scalar("SELECT COUNT(*) FROM crashes")
-        faultcore = scalar("SELECT COUNT(*) FROM crashes WHERE faultcore_involved=1")
+        faultcore_crashes = scalar("SELECT COUNT(*) FROM crashes WHERE faultcore_involved=1")
         inv = conn.execute("SELECT * FROM inventory_runs ORDER BY id DESC LIMIT 1").fetchone()
         hw = conn.execute("SELECT * FROM hardware_runs ORDER BY id DESC LIMIT 1").fetchone()
         lsm_row = conn.execute("SELECT * FROM lsm_runs ORDER BY id DESC LIMIT 1").fetchone()
@@ -668,7 +668,8 @@ def cmd_status(args) -> int:
         else:
             print("  hardware tier : no runs yet (qa hardware collect)")
         print(f"  database      : {samples} samples, {events} events, {crashes} crashes")
-        print(f"  critical      : {critical} events; fault-core-correlated crashes: {faultcore}")
+        print(f"  critical      : {critical} events; fault-core-correlated crashes: {faultcore_crashes}")
+        print(f"  fault-core    : {faultcore.integration_state()}")
         if inv:
             print(f"  inventory     : run {inv['id']} at {inv['ts']} ({inv['counts']})")
             print(
@@ -678,7 +679,7 @@ def cmd_status(args) -> int:
         print(f"  evidence      : {bundles} bundles; chain head {chain_head[:90] or 'none'}")
         print(f"  ticket drafts : {drafts} (never auto-submitted)")
         tri = triage.summary(conn)
-        print(f"  fault-core    : {tri['total']} cases {tri['by_status']} -> {config.TRIAGE_DIR}")
+        print(f"  fault triage  : {tri['total']} cases {tri['by_status']} -> {config.TRIAGE_DIR}")
         fcounts = conn.execute(
             "SELECT severity, COUNT(*) n FROM findings WHERE status='open' GROUP BY severity"
         ).fetchall()
@@ -759,12 +760,11 @@ def cmd_preflight(args) -> int:
     checks.append(("crontab", shutil.which("crontab") is not None, ""))
     free = shutil.disk_usage(str(config.ROOT)).free
     checks.append(("disk > 2 GiB free", free > 2 * 1024**3, f"{free / 1024**3:.1f} GiB"))
-    topo = faultcore.topology()
     checks.append(
         (
-            "fault core configured",
+            "fault core integration",
             bool(config.FAULT_CORE_CPUS) or not config.FAULT_CORE_ENABLE,
-            faultcore.presence(topo),
+            faultcore.integration_state(),
         )
     )
     compatibility = compat.report()

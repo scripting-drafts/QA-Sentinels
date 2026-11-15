@@ -16,12 +16,21 @@ ROOT = pathlib.Path(os.environ.get("QA_SENTINELS_HOME", HOME / PROJECT_DIR)).res
 
 SETTINGS_FILE = ROOT / "config" / "settings.json"
 
+# Non-numeric settings are accepted only from this small, typed whitelist.
+SETTINGS_ENUM_VALUES = {
+    "QA_FAULT_CORE_ENABLE": {
+        "auto", "0", "1", "off", "on", "no", "yes", "false", "true",
+    },
+    "QA_FAULT_CORE_ENFORCE": {"auto", "lab", "retired", "off"},
+}
+
 
 def apply_settings_file(path=None) -> None:
-    """Load numeric QA_* overrides written by the dashboard.
+    """Load dashboard settings without allowing arbitrary environment injection.
 
-    Values are only accepted when the key is missing from the environment and
-    the value is a bare number, so the file can never inject shell content.
+    Numeric QA_* overrides are accepted as before. Fault-core toggles are
+    accepted only when they match the typed whitelist. Environment variables
+    always take precedence over the settings file.
     """
     target = pathlib.Path(path) if path else SETTINGS_FILE
     try:
@@ -36,6 +45,11 @@ def apply_settings_file(path=None) -> None:
         if key in os.environ:
             continue
         text = str(value).strip()
+        allowed = SETTINGS_ENUM_VALUES.get(key)
+        if allowed is not None:
+            if text.lower() in allowed:
+                os.environ[key] = text.lower()
+            continue
         if not re.fullmatch(r"-?\d+(?:\.\d+)?", text):
             continue
         os.environ[key] = text

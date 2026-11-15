@@ -251,6 +251,27 @@ def presence(topo: dict) -> str:
     return "unknown (CPU topology is unavailable)"
 
 
+def integration_state() -> str:
+    """Human-readable state of the optional faultlab integration.
+
+    ``auto`` disables the integration when no fault CPU set is configured;
+    ``QA_FAULT_CORE_ENABLE=0`` disables it explicitly. A standalone QA
+    Sentinels installation must still be able to print this state without
+    touching a faultlab file.
+    """
+    if not config.FAULT_CORE_ENABLE:
+        if config.FAULT_CORE_CPUS:
+            return "disabled by configuration"
+        return "disabled (optional; no faultlab config or QA_FAULT_CORE_CPUS)"
+    if not config.FAULT_CORE_CPUS:
+        return "enabled but no fault CPUs configured"
+    mode, _ = _mode()
+    state = presence(topology())
+    if mode:
+        return f"enabled; mode={mode}; {state}"
+    return f"enabled; {state}"
+
+
 def theme_tag(topo: dict) -> str:
     state = topo.get("state")
     if state in ("retired", "offline"):
