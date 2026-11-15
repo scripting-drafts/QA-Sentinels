@@ -1,0 +1,6 @@
+qa-sentinels (1.1.0) jammy; urgency=medium
+
+  * Initial APT package: per-user QA Sentinels CLI seed and workspace
+    bootstrap. Existing ~/QA-Sentinels checkouts are left untouched.
+
+ -- Gerard Sala <creative.gsp@gmail.com>  Sun, 15 Nov 2026 13:00:00 +0100

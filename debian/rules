@@ -1,0 +1,34 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_clean:
+	$(MAKE) -C src clean
+	dh_clean
+
+override_dh_auto_configure:
+
+override_dh_auto_build:
+	$(MAKE) -C src
+
+override_dh_auto_test:
+
+override_dh_auto_install:
+	install -d debian/qa-sentinels/usr/share/qa-sentinels
+	cp -a bin sentinels docs README.md debian/qa-sentinels/usr/share/qa-sentinels/
+	rm -rf debian/qa-sentinels/usr/share/qa-sentinels/bin/__pycache__ \
+		debian/qa-sentinels/usr/share/qa-sentinels/sentinels/__pycache__
+	rm -f debian/qa-sentinels/usr/share/qa-sentinels/bin/qa_ebpf \
+		debian/qa-sentinels/usr/share/qa-sentinels/bin/qa_ebpf.build.json \
+		debian/qa-sentinels/usr/share/qa-sentinels/bin/qa_trace.bpf.o
+	install -m 0755 src/qa_sample debian/qa-sentinels/usr/share/qa-sentinels/bin/qa_sample
+	install -d debian/qa-sentinels/usr/share/qa-sentinels/config
+	install -m 0644 config/modes.md \
+		debian/qa-sentinels/usr/share/qa-sentinels/config/modes.md
+	install -m 0644 config/hardware-sources.example.json \
+		debian/qa-sentinels/usr/share/qa-sentinels/config/hardware-sources.example.json
+	install -m 0644 config/identity.env.example \
+		debian/qa-sentinels/usr/share/qa-sentinels/config/identity.env.example
+	install -D -m 0755 debian/qa-wrapper debian/qa-sentinels/usr/bin/qa
+	install -D -m 0644 debian/README.Debian debian/qa-sentinels/usr/share/doc/qa-sentinels/README.Debian

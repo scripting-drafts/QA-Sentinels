@@ -31,3 +31,8 @@ __pycache__/
 
 # Generated per-host launcher (contains the absolute checkout path)
 bin/qa-logs-terminal
+
+# Debian build artifacts
+debian/files
+debian/.debhelper/
+debian/*.substvars
