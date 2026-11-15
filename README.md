@@ -6,7 +6,7 @@
 
 QA Sentinels periodically samples the system, examines journal and crash records, and organizes findings into reports and verifiable evidence bundles. When an incident warrants closer inspection, it can queue a separate, more privileged tracing run. It also helps correlate repeated failures and prepare vendor bug-report drafts; it does not submit tickets automatically.
 
-The project pays particular attention to the fault core configured by faultlab. Core affinity is captured as diagnostic context.
+Faultlab integration is optional: when `/etc/faultlab/config` or `QA_FAULT_CORE_CPUS` is present, QA Sentinels follows the configured fault core; otherwise fault-core checks are disabled and normal monitoring continues.
 
 ## How it works
 
@@ -27,6 +27,55 @@ The core implementation uses a **C sampler**, **Python 3 standard library**, **S
 - Sufficient local disk space for samples, journal records, reports, and traces.
 
 Some information may be unavailable without journal permissions or elevated capabilities. Use `preflight` to see what the current host supports.
+
+## Install on Linux
+
+| Method | System | Notes |
+| --- | --- | --- |
+| Launchpad PPA | Ubuntu 22.04 (jammy) | signed package, automatic updates |
+| Local `.deb` | Ubuntu/Debian | offline or pinned version |
+| Source installer | any Linux | layer 2, root helpers and development |
+
+### Ubuntu 22.04 (PPA)
+
+The `qa-sentinels` package installs the CLI and a read-only seed tree. On
+first use, `/usr/bin/qa` creates `~/QA-Sentinels` unless a checkout already
+exists. It does not overwrite an existing checkout.
+
+```bash
+sudo add-apt-repository ppa:toomanypatterns/ubuntu-backup
+sudo apt update
+sudo apt install qa-sentinels
+qa status
+```
+
+QA Sentinels is standalone and does not require the GUI. The optional
+`qa-dashboard` package is an Electron front end and Recommends
+`qa-sentinels`; install it separately with:
+
+```bash
+sudo apt install qa-dashboard
+```
+
+The package does not enable scheduling automatically. Use
+`qa install-cron` or let the QA Dashboard manage its fallback cycle. The
+source installer below remains the supported path for layer 2, root helpers
+and development.
+
+### Local .deb
+
+Build the package from a checkout and install it with `apt` so dependencies are
+resolved:
+
+```bash
+dpkg-buildpackage -b -us -uc
+sudo apt install ./qa-sentinels_*.deb
+```
+
+### Other Linux distributions (source)
+
+Use the interactive installer in [Quick start: Layer 1](#quick-start-layer-1).
+It needs Python 3, a C compiler, `make` and `git`; the PPA is not involved.
 
 ## Quick start: Layer 1
 
