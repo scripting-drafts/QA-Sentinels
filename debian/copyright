@@ -3,11 +3,8 @@ Upstream-Name: QA Sentinels
 Source: https://github.com/scripting-drafts/QA-Sentinels
 
 Files: *
-Copyright: 2026 Gerard Sala <creative.gsp@gmail.com>
+Copyright: 2026 Gerard Sala
 License: MIT
- Comment: The upstream repository does not currently ship a LICENSE file.
-  This packaging uses the MIT license used by the author's QA Dashboard
-  project. Confirm the intended license before public redistribution.
  Permission is hereby granted, free of charge, to any person obtaining a
  copy of this software and associated documentation files (the "Software"),
  to deal in the Software without restriction, including without limitation
@@ -25,3 +22,8 @@ License: MIT
  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  DEALINGS IN THE SOFTWARE.
+
+Comment: Python 3, SQLite, systemd, cron, perf, and ftrace are host runtime
+ dependencies and are not bundled. The optional libbpf build uses the host
+ toolchain; the Debian package does not ship the eBPF tracer or toolchain/.
+ See /usr/share/doc/qa-sentinels/THIRD-PARTY-NOTICES.md.

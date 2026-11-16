@@ -15,8 +15,8 @@ from datetime import datetime
 
 from . import (
     boot, compat, config, correlate, crosscheck, db, deep, detect, evidence, faultcore,
-    hardware, holds, ingest, inventory, logs, lsm, notify, posture, query, raise_ticket,
-    report, sampler, security, shutdown, tickets, trace, triage,
+    hardware, holds, ingest, inventory, legal, logs, lsm, notify, posture, query,
+    raise_ticket, report, sampler, security, shutdown, tickets, trace, triage,
 )
 from .util import fmt_duration, iso, parse_iso, read_text, run, sha256_file, utcnow
 
@@ -740,6 +740,18 @@ def cmd_status(args) -> int:
         print(f"  eBPF          : {'built' if ebpf_ok else 'stale/missing'} ({ebpf_detail})")
         print(f"  posture       : {posture.line()}")
         print(f"  journal       : {config.JOURNAL_DIR}")
+    return 0
+
+
+def cmd_legal(args) -> int:
+    data = legal.register()
+    if args.json:
+        print(json.dumps(data, indent=2, sort_keys=True))
+    else:
+        legal.print_register(data)
+    if args.check:
+        summary = data.get("summary", {})
+        return 0 if not summary.get("actions") and summary.get("version_ok") else 1
     return 0
 
 
@@ -1586,6 +1598,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--dry-run", action="store_true", help="collect what is allowed and list skips")
     s.add_argument("--enqueue", action="store_true", help="queue only; do not execute")
     s.set_defaults(func=cmd_deep)
+
+    s = sub.add_parser(
+        "legal", help="show the own-product license and legal compliance register")
+    s.add_argument("--json", action="store_true", help="emit JSON")
+    s.add_argument(
+        "--check", action="store_true",
+        help="exit non-zero on missing artifacts or version drift",
+    )
+    s.set_defaults(func=cmd_legal)
 
     s = sub.add_parser("compat", help="report Ubuntu/Python/SQLite/systemd upgrade compatibility")
     s.add_argument("--strict", action="store_true", help="exit non-zero outside the documented baseline")

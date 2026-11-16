@@ -1,3 +1,13 @@
+qa-sentinels (1.2.0) jammy; urgency=medium
+
+  * Add the `qa legal` own-product license and legal compliance register.
+  * Add LICENSE, third-party notices, privacy, contribution, security,
+    and release-policy documents.
+  * Install the legal manifest and license texts with the package.
+  * Remove the unconfirmed-license warning from debian/copyright.
+
+ -- Gerard Sala <creative.gsp@gmail.com>  Mon, 16 Nov 2026 10:00:00 +0100
+
 qa-sentinels (1.1.1) jammy; urgency=medium
 
   * Make the fault-core integration optional and report its state in status

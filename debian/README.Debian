@@ -9,6 +9,9 @@ This package provides the QA Sentinels CLI and a read-only seed tree under
     `qa init`;
   * never overwrites a non-empty ~/QA-Sentinels directory that lacks bin/qa.
 
+The own-product license and legal register is available with `qa legal`
+(add `--json` for automation and `--check` for release checks).
+
 The package does not install cron or systemd schedules automatically. Use:
 
   qa install-cron

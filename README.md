@@ -139,6 +139,17 @@ To remove the user cron entries installed by this project:
 ./bin/qa install-cron --remove
 ```
 
+### Legal register
+
+```bash
+./bin/qa legal            # license, components, checks, reviews, documents
+./bin/qa legal --json     # machine-readable register
+./bin/qa legal --check    # exit non-zero on missing artifacts or version drift
+```
+
+The register is a local inventory and attestation aid, not legal advice. See
+[`docs/LEGAL.md`](docs/LEGAL.md) and [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
+
 ## Investigate a crash or unexpected shutdown
 
 1. **Review boot history.** `./bin/qa boots --limit 20` classifies recorded boots. An unclean or silent stop is a lead to investigate, not a definitive root-cause diagnosis.
@@ -189,3 +200,8 @@ The separate eBPF tracer counts scheduler switches, wakeups, and page faults per
 ```
 
 The eBPF build requires kernel BTF and appropriate tools and libraries. When unavailable, layer 2 can still gather supported `ftrace`/`perf` evidence and records the eBPF limitation. Rebuild the tracer after a kernel upgrade. Details: [root/ebpf/README.md](root/ebpf/README.md).
+
+## License
+
+The MIT License (MIT). Copyright (c) 2026 Gerard Sala. See [`LICENSE`](LICENSE)
+and [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
