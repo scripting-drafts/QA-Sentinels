@@ -12,7 +12,6 @@
     "python3": "3.10+",
     "sqlite": "3.37+",
     "qa-dashboard": "0.4.0",
-    "qa-siem": "1.1.0",
     "qa-license-scanner": "0.1.0"
   },
   "components": [
@@ -74,7 +73,6 @@
     {
       "id": "qa-siem",
       "name": "QA SIEM",
-      "version": "1.1.0",
       "license": "MIT",
       "scope": "companion",
       "url": "https://github.com/scripting-drafts/QA-SIEM"
