@@ -36,3 +36,6 @@ bin/qa-logs-terminal
 debian/files
 debian/.debhelper/
 debian/*.substvars
+debian/debhelper-build-stamp
+debian/qa-sentinels/
+debian/tmp/
