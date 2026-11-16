@@ -14,9 +14,22 @@ that JSON to its report and hash manifest.
     root/ebpf/bootstrap-ebpf.sh   # root: apt; non-root: ./toolchain, no system change
     root/ebpf/build.sh            # bin/qa_ebpf + bin/qa_trace.bpf.o
 
-`build.sh` regenerates `vmlinux.h` from the running kernel's BTF, so rebuild
-after a kernel upgrade. It needs `clang`, `bpftool`, `libbpf-dev`, `libelf`,
-`zlib`.
+`build.sh` is toolchain-first and self-contained: `toolchain/` carries clang,
+libbpf, libelf, zlib, `bpftool` and a cached `vmlinux.h`, so no host `clang` or
+`libbpf-dev` is required. The host is used only without a complete toolchain
+(`QA_EBPF_ALLOW_HOST=0` forbids it); `QA_EBPF_TOOLCHAIN` selects another tree
+and `QA_EBPF_USE_SYSTEM=1` forces the host.
+
+`bootstrap-ebpf.sh` pins every download in `toolchain.lock` and verifies the
+SHA256 of reused `.deb` files. `build.sh` records the toolchain, clang, libbpf
+and `vmlinux.h` hashes in `bin/qa_ebpf.build.json`. `build.sh --check` prints
+the resolved compiler, libraries and `vmlinux.h` without building;
+`--print-env` prints the same plus the link line.
+
+`vmlinux.h` is regenerated from the running kernel's BTF whenever the kernel
+release changes, so rebuild after a kernel upgrade. The loader links its libs
+with an `$ORIGIN/../toolchain` rpath; deleting `toolchain/` breaks it until the
+next bootstrap.
 
 ## Run
 
