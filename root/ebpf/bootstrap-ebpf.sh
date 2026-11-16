@@ -6,7 +6,7 @@
 #           $ROOT/toolchain, so no system change and no sudo are required.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PKGS=(clang-14 libclang-cpp14 libllvm14 libclang-common-14-dev libclang1-14 libbpf-dev)
+PKGS=(clang-14 libclang-cpp14 libllvm14 libclang-common-14-dev libclang1-14 libbpf-dev libbpf0)
 
 if [[ ${EUID} -eq 0 ]]; then
   echo "installing system packages: clang llvm libbpf-dev libelf-dev zlib1g-dev bpftool"

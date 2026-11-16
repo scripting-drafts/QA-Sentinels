@@ -14,9 +14,22 @@ if command -v clang >/dev/null 2>&1 && [[ -f /usr/include/bpf/libbpf.h ]]; then
   LDLIBS="-lbpf -lelf -lz -lpthread"
 elif [[ -x "$TC/usr/lib/llvm-14/bin/clang" ]]; then
   CLANG="$TC/usr/lib/llvm-14/bin/clang"
-  export LD_LIBRARY_PATH="$TC/usr/lib/x86_64-linux-gnu:$TC/usr/lib/llvm-14/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  TC_LIB="$TC/usr/lib/x86_64-linux-gnu"
+  export LD_LIBRARY_PATH="$TC_LIB:$TC/usr/lib/llvm-14/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
   BPF_INC="-I$TC/usr/include"
-  LDLIBS="$TC/usr/lib/x86_64-linux-gnu/libbpf.a -lelf -lz -lpthread"
+  # libbpf-dev ships headers and a libbpf.so symlink; the libbpf.so.0 object
+  # lives in libbpf0. Prefer the static archive, then the toolchain shared
+  # library, then the host runtime library.
+  if [[ -f "$TC_LIB/libbpf.a" ]]; then
+    LDLIBS="$TC_LIB/libbpf.a -lelf -lz -lpthread"
+  elif [[ -e "$TC_LIB/libbpf.so.0" ]]; then
+    LDLIBS="-L$TC_LIB -Wl,-rpath,$TC_LIB -lbpf -lelf -lz -lpthread"
+  elif [[ -e /usr/lib/x86_64-linux-gnu/libbpf.so.0 ]]; then
+    LDLIBS="/usr/lib/x86_64-linux-gnu/libbpf.so.0 -lelf -lz -lpthread"
+  else
+    echo "libbpf runtime library not found. run: $ROOT/root/ebpf/bootstrap-ebpf.sh" >&2
+    exit 1
+  fi
 else
   echo "no clang/libbpf found. run: $ROOT/root/ebpf/bootstrap-ebpf.sh" >&2
   exit 1
