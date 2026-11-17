@@ -11,7 +11,7 @@ qa-sentinels (1.3.0) jammy; urgency=medium
   * Add `qa network collect|show|check`, query categories, report section,
     retention and tests.
   * Summarize retired or offline fault CPUs as "Fault Injection CPUs
-    Offline" with the configured faultlab CPU set, omit the fault-core
+    Offline" without listing the unavailable CPUs, omit the fault-core
     correlation section, and state an orientative reproduction viability
     percentage in ticket drafts.
   * Use the configured faultlab CPU set in correlation headings instead of

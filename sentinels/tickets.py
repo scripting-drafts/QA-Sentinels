@@ -125,10 +125,7 @@ def _environment(topology: dict | None = None, issue: dict | None = None,
                 gpu = re.sub(r"\s+", " ", line.strip())
                 break
     if topo.get("state") in ("retired", "offline"):
-        cpus = faultcore.cpu_set(topo)
-        fault_line = (
-            f"- Fault Injection CPUs Offline (CPUs: {cpus})"
-            if cpus else "- Fault Injection CPUs Offline")
+        fault_line = "- Fault Injection CPUs Offline"
     else:
         fault_line = (
             f"- {faultcore.display_label(topo)}: {faultcore.presence(topo)}")
