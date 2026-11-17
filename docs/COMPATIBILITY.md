@@ -59,6 +59,9 @@ the documented minimums. `--strict` exits non-zero outside the baseline.
   refuses a stale object; rebuild after every kernel change.
 - **LSM:** the root LSM helper is optional and reports unavailable securityfs
   state instead of inventing it.
+- **Network:** `ip` and `ss` are required for full coverage; `resolvectl`,
+  `nmcli`, `iw`, `wg`, `nft`, `iptables-save` and `firewall-cmd` are optional
+  and recorded as unavailable or needs-root, never as a failed cycle.
 - **NVIDIA/lockdown:** do not add `lockdown=integrity` unless all required
   modules are signed; the installer does not enable it by default.
 

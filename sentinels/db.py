@@ -143,6 +143,44 @@ CREATE TABLE IF NOT EXISTS inventory_diffs (
     old_value TEXT,
     new_value TEXT
 );
+CREATE TABLE IF NOT EXISTS network_runs (
+    id INTEGER PRIMARY KEY,
+    ts TEXT NOT NULL,
+    status TEXT,
+    digest TEXT,
+    counts TEXT,
+    sources TEXT,
+    duration_ms INTEGER,
+    detail TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_network_ts ON network_runs(ts);
+CREATE TABLE IF NOT EXISTS network_items (
+    run_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    item TEXT NOT NULL,
+    value TEXT,
+    PRIMARY KEY (run_id, kind, item)
+);
+CREATE INDEX IF NOT EXISTS idx_network_items_kind ON network_items(run_id, kind);
+CREATE TABLE IF NOT EXISTS network_metrics (
+    run_id INTEGER NOT NULL,
+    scope TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    value INTEGER,
+    PRIMARY KEY (run_id, scope, metric)
+);
+CREATE INDEX IF NOT EXISTS idx_network_metrics_scope ON network_metrics(run_id, scope);
+CREATE TABLE IF NOT EXISTS network_diffs (
+    id INTEGER PRIMARY KEY,
+    ts TEXT NOT NULL,
+    run_id INTEGER,
+    kind TEXT,
+    change TEXT,
+    item TEXT,
+    old_value TEXT,
+    new_value TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_network_diffs_ts ON network_diffs(ts);
 CREATE TABLE IF NOT EXISTS hardware_runs (
     id INTEGER PRIMARY KEY,
     ts TEXT NOT NULL,

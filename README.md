@@ -127,10 +127,13 @@ make -C src install
 
 ```bash
 ./bin/qa status                 # Overall status
+./bin/qa network show          # Latest network/connectivity snapshot
 ./bin/qa logs --lines 50       # Recent sentinel activity
 ./bin/qa logs --follow         # Follow new log entries
 ./bin/qa preflight             # Check prerequisites and access
 ```
+
+Network coverage and privacy details are in [`docs/NETWORK.md`](docs/NETWORK.md).
 
 `var/cron.log` is appended by both the cron entry and `qa-sentinel.service`. It rotates by copytruncate at `QA_LOG_MAX_MB` (default 20 MiB) and keeps `QA_LOG_KEEP` numbered files (default 10), so `qa logs --follow` survives rotation. Force a rotation with `./bin/qa logs --rotate`.
 

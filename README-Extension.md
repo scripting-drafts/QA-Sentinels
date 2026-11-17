@@ -11,6 +11,7 @@ All commands use `./bin/qa <command>` from the repository root.
 | Failure investigation | `boots`, `shutdown`, `findings`, `triage`, `correlate`, `trace`, `holds` | Examine restarts, boot and shutdown-window errors, events, their relationships, and held/outdated packages |
 | Query engine | `query` | Read-only category views or one `SELECT`/`WITH`/`EXPLAIN` statement against `sentinels.db` |
 | Hardware health | `hardware` | Collect RAS/EDAC/AER/APEI, SMART/NVMe, GPU, BMC, sensors, turbostat/PCM/uncore, vendor logs |
+| Network and connectivity | `network` | Read-only interfaces, addresses, routes, DNS, listeners, tunnels, firewall summary, packet counters and `net.*` sysctls |
 | Linux Security Modules | `lsm` | Monitor AppArmor, SELinux, Smack, TOMOYO, Yama, lockdown, IMA, BPF, drift and denials |
 | Security provenance | `security` | Detect unexpected user/root code execution, root-owned state, and audit coverage gaps |
 | Evidence | `evidence`, `verify` | Export and validate hash-manifested bundles |
@@ -24,6 +25,7 @@ Useful examples:
 ./bin/qa compat --strict
 ./bin/qa report --kind daily --hours 24
 ./bin/qa query --category inbox
+./bin/qa network show
 ./bin/qa query --category findings --search systemd.service_start --severity error
 ./bin/qa query --latest-cycle
 ./bin/qa query --json --sql "SELECT severity, count(*) AS n FROM findings GROUP BY severity"
@@ -91,6 +93,7 @@ Optional reporter details may be put in `config/identity.env`, using `config/ide
 - [`docs/SECURITY.md`](docs/SECURITY.md) — security provenance rules, auditd coverage, and limits.
 - [`docs/HARDWARE.md`](docs/HARDWARE.md) — hardware-health sources, privileges, scheduling, and limits.
 - [`docs/LSM.md`](docs/LSM.md) — Linux Security Modules state, drift, denials, and limits.
+- [`docs/NETWORK.md`](docs/NETWORK.md) — network/connectivity readings, privacy, findings, and limits.
 - [`tests/`](tests/) — project tests.
 
 To run the included Python test suite, from the repository root:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -75,7 +76,21 @@ _MAC_RE = re.compile(r"\b(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}\b")
 _UUID_RE = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 _CRASH_ID_RE = re.compile(r"\bbp-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 _IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+_IPV6_RE = re.compile(
+    r"(?<![\w:])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?:%[\w.-]+)?(?![\w:])"
+)
 _SERIAL_RE = re.compile(r"(?i)\b(serial(?:\s*(?:number|no\.?))?\s*[:=]\s*)\S+")
+
+
+def _ipv6_sub(match: re.Match) -> str:
+    candidate = match.group(0)
+    address = candidate.split("%", 1)[0]
+    try:
+        if ipaddress.ip_address(address).version == 6:
+            return "<ip>"
+    except ValueError:
+        pass
+    return candidate
 
 
 def redact(text: str) -> str:
@@ -103,6 +118,7 @@ def redact(text: str) -> str:
 
     text = _CRASH_ID_RE.sub(_hold_crash_id, text)
     text = _UUID_RE.sub("<uuid>", text)
+    text = _IPV6_RE.sub(_ipv6_sub, text)
     text = _IPV4_RE.sub("<ip>", text)
     text = _SERIAL_RE.sub(r"\1<serial>", text)
     if _USER and len(_USER) > 2:

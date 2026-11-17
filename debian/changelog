@@ -1,3 +1,18 @@
+qa-sentinels (1.3.0) jammy; urgency=medium
+
+  * Add the network and connectivity tier: interfaces, addresses, routes,
+    policy rules, DNS/resolved state, Netplan file drift, NetworkManager
+    profiles, Wi-Fi signal, WireGuard/OpenVPN/tailscale state, firewall
+    summary, conntrack, neighbours, socket counters and the net sysctl tree.
+  * Fix listener collection to key on the local address instead of Send-Q, and
+    move listening sockets out of the software inventory.
+  * Redact IPv6 addresses and network item keys in evidence bundles, and hash
+    SSIDs, BSSIDs, WireGuard keys and peer endpoints.
+  * Add `qa network collect|show|check`, query categories, report section,
+    retention and tests.
+
+ -- Gerard Sala <creative.gsp@gmail.com>  Tue, 17 Nov 2026 12:00:00 +0100
+
 qa-sentinels (1.2.1) jammy; urgency=medium
 
   * Close the legal register trademark review with a documented affiliation

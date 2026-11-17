@@ -153,6 +153,40 @@ CATEGORIES: dict[str, dict[str, str]] = {
             "FROM inventory_diffs ORDER BY ts DESC, id DESC LIMIT {limit}"
         ),
     },
+    "network": {
+        "label": "Network runs",
+        "description": "Connectivity and network snapshots with source coverage.",
+        "sql": (
+            "SELECT id, ts, status, digest, counts, sources, duration_ms, detail "
+            "FROM network_runs ORDER BY ts DESC, id DESC LIMIT {limit}"
+        ),
+    },
+    "network-items": {
+        "label": "Network items",
+        "description": "Interfaces, addresses, routes, DNS, tunnels and firewall summaries.",
+        "sql": (
+            "SELECT i.run_id, r.ts, i.kind, i.item, i.value "
+            "FROM network_items i LEFT JOIN network_runs r ON r.id = i.run_id "
+            "ORDER BY i.run_id DESC, i.kind, i.item LIMIT {limit}"
+        ),
+    },
+    "network-metrics": {
+        "label": "Network metrics",
+        "description": "Packet, error, DNS, listener and tunnel counters per run.",
+        "sql": (
+            "SELECT m.run_id, r.ts, m.scope, m.metric, m.value "
+            "FROM network_metrics m LEFT JOIN network_runs r ON r.id = m.run_id "
+            "ORDER BY m.run_id DESC, m.scope, m.metric LIMIT {limit}"
+        ),
+    },
+    "network-diffs": {
+        "label": "Network changes",
+        "description": "Network items added, removed or changed between runs.",
+        "sql": (
+            "SELECT id, ts, run_id, kind, change, item, old_value, new_value "
+            "FROM network_diffs ORDER BY ts DESC, id DESC LIMIT {limit}"
+        ),
+    },
     "hardware": {
         "label": "Hardware runs",
         "description": "Hardware-health runs across RAS, EDAC, AER, APEI and SMART.",
@@ -277,6 +311,10 @@ CATEGORY_SOURCES = {
     "inventory": "inventory_runs",
     "inventory-items": "inventory",
     "inventory-diffs": "inventory_diffs",
+    "network": "network_runs",
+    "network-items": "network_items",
+    "network-metrics": "network_metrics",
+    "network-diffs": "network_diffs",
     "hardware": "hardware_runs",
     "hardware-items": "hardware_items",
     "lsm": "lsm_runs",

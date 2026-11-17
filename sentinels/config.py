@@ -153,6 +153,20 @@ INVENTORY_MIN_S = int(os.environ.get("QA_INVENTORY_MIN_S", "900"))
 INVENTORY_MAX_S = int(os.environ.get("QA_INVENTORY_MAX_S", str(12 * 3600)))
 INVENTORY_EVENT_GAP_S = int(os.environ.get("QA_INVENTORY_EVENT_GAP_S", "300"))
 
+# network and connectivity tier: read-only link, address, route, DNS, tunnel,
+# firewall-summary, listener and counter collection. No active probes are sent.
+NETWORK_ENABLE = os.environ.get("QA_NETWORK_ENABLE", "1").lower() in ("1", "yes", "true", "on")
+NETWORK_INTERVAL_S = max(60, int(os.environ.get("QA_NETWORK_INTERVAL_S", "300")))
+NETWORK_TIMEOUT_S = max(2, int(os.environ.get("QA_NETWORK_TIMEOUT_S", "10")))
+NETWORK_RETENTION_DAYS = max(0, int(os.environ.get("QA_NETWORK_RETENTION_DAYS", "14")))
+NETWORK_ERROR_DELTA_ALERT = max(1, int(os.environ.get("QA_NETWORK_ERROR_DELTA_ALERT", "1")))
+NETWORK_TCP_RETRANS_ALERT_PCT = float(os.environ.get("QA_NETWORK_TCP_RETRANS_ALERT_PCT", "5"))
+NETWORK_TCP_MIN_SEGMENTS = max(1, int(os.environ.get("QA_NETWORK_TCP_MIN_SEGMENTS", "100")))
+NETWORK_CONNTRACK_ALERT_PCT = float(os.environ.get("QA_NETWORK_CONNTRACK_ALERT_PCT", "90"))
+NETWORK_FIREWALL_REQUIRED = os.environ.get(
+    "QA_NETWORK_FIREWALL_REQUIRED", "0"
+).lower() in ("1", "yes", "true", "on")
+
 # two-layer operation
 DEEP_DURATION_S = int(os.environ.get("QA_DEEP_DURATION_S", "30"))
 DEEP_MAX_DURATION_S = int(os.environ.get("QA_DEEP_MAX_DURATION_S", "120"))

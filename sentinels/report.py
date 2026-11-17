@@ -5,7 +5,10 @@ import json
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-from . import boot, config, db, deep, detect, faultcore, hardware, lsm, posture, triage
+from . import (
+    boot, config, db, deep, detect, faultcore, hardware, lsm, network, posture,
+    triage,
+)
 from .util import (
     fmt_duration, human_bytes, iso, parse_iso, read_text, redact,
     write_text_atomic,
@@ -221,6 +224,72 @@ def _lsm_section(conn) -> str:
     return "\n".join(lines)
 
 
+def _network_section(conn) -> str:
+    data = network.latest(conn)
+    if not data:
+        return "## Network and connectivity\n\n_No network run yet._"
+    run = data["run"]
+    values = {
+        (item["kind"], item["item"]): item["value"] or ""
+        for item in data.get("items", [])
+    }
+    metrics = {
+        (metric["scope"], metric["metric"]): metric["value"]
+        for metric in data.get("metrics", [])
+    }
+    interfaces = sorted({
+        item.split("/", 1)[0]
+        for kind, item in values
+        if kind == "interface" and "/" in item
+    })
+    up = sum(
+        1 for iface in interfaces
+        if values.get(("interface", f"{iface}/operstate"), "").lower() == "up"
+    )
+    defaults = [
+        f"`{key.split('/', 1)[1]}`: {redact(value)}"
+        for (kind, key), value in sorted(values.items())
+        if kind == "route" and key.startswith("default/")
+    ]
+    tunnels = sorted(
+        item.split("/", 1)[1]
+        for (kind, item) in values
+        if kind == "tunnel" and item.startswith("interface/")
+    )
+    listeners = (
+        f"tcp {metrics.get(('listener', 'tcp'), 'n/a')}, "
+        f"udp {metrics.get(('listener', 'udp'), 'n/a')} "
+        f"(filtered ephemeral {metrics.get(('listener', 'udp_ephemeral_filtered'), 'n/a')})"
+    )
+    lines = [
+        "## Network and connectivity",
+        "",
+        f"- Last run: `{run.get('ts')}` status **{run.get('status')}** "
+        f"({run.get('duration_ms')} ms), digest `{str(run.get('digest') or '')[:12]}…`",
+        f"- Items: `{run.get('counts')}`",
+        f"- Interfaces: **{len(interfaces)}** ({up} up); "
+        f"default route: {'; '.join(defaults) or 'none'}",
+        f"- Connectivity: network-online={values.get(('connectivity', 'network-online.target'), 'n/a')}, "
+        f"networkd={values.get(('connectivity', 'networkd/oper_state'), 'n/a')}",
+        f"- DNS upstream servers: **{values.get(('dns', 'upstream_count'), 'n/a')}**; "
+        f"listeners: {listeners}",
+        f"- Tunnels: {', '.join(f'`{name}`' for name in tunnels) or 'none'}; "
+        f"firewall: `{values.get(('firewall', 'active'), 'unknown')}`",
+        f"- Sources: `{run.get('sources')}`",
+    ]
+    diffs = data.get("diffs") or []
+    if diffs:
+        lines += ["", f"| network change | item |", "|---|---|"]
+        for diff in diffs[:30]:
+            lines.append(
+                f"| {diff['change']} | "
+                f"`{redact(diff['kind'])}/{redact(diff['item'])}` |"
+            )
+        if len(diffs) > 30:
+            lines.append(f"| … | {len(diffs) - 30} more in the database |")
+    return "\n".join(lines)
+
+
 def _faultcore_section(conn, since_iso: str) -> str:
     if not config.FAULT_CORE_ENABLE or not config.FAULT_CORE_CPUS:
         return "## Fault-core integration\n\n" + faultcore.integration_state() + "."
@@ -433,6 +502,7 @@ def build_report(conn, kind: str = "daily", hours: int = 24) -> tuple[str, str]:
     body += ["", _faultcore_section(conn, since)]
     body += ["", _hardware_section(conn)]
     body += ["", _lsm_section(conn)]
+    body += ["", _network_section(conn)]
 
     tri = triage.summary(conn)
     tri_rows = triage.cases(conn, limit=12)

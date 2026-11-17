@@ -6,7 +6,7 @@ environment variable read by `bin/qa`.
 - `QA_FULL_CAPTURE=1` — ingest the whole journal at `info` priority (not only
   warnings), including every process that logs.
 - `QA_JOURNAL_PRIORITY=debug` — go further; expect a very large database.
-- `QA_KEEP_FOREVER=1` — disable event/sample/process/inventory retention.
+- `QA_KEEP_FOREVER=1` — disable event/sample/process/inventory/network retention.
 - `QA_EVENT_RETENTION_DAYS=0` — event retention; `0` keeps events forever.
 - `QA_SAMPLE_RETENTION_DAYS=0`, `QA_PROC_RETENTION_DAYS=0` — sample and
   process snapshot retention; `0` keeps them forever.
@@ -30,6 +30,16 @@ environment variable read by `bin/qa`.
   set `0` for shutdown-phase only.
 - `QA_INVENTORY_INTERVAL_S=10800` — base inventory period.
 - `QA_INVENTORY_MIN_S=900`, `QA_INVENTORY_MAX_S=43200` — adaptive floor/ceiling.
+- `QA_NETWORK_ENABLE=1` — enable the read-only network/connectivity tier.
+- `QA_NETWORK_INTERVAL_S=300`, `QA_NETWORK_TIMEOUT_S=10` — snapshot cadence
+  and per-command timeout.
+- `QA_NETWORK_RETENTION_DAYS=14` — network run, item and counter retention;
+  `0` keeps them forever.
+- `QA_NETWORK_ERROR_DELTA_ALERT=1`, `QA_NETWORK_TCP_RETRANS_ALERT_PCT=5`,
+  `QA_NETWORK_TCP_MIN_SEGMENTS=100` — interface-error and TCP retransmit rules.
+- `QA_NETWORK_CONNTRACK_ALERT_PCT=90` — conntrack table alert threshold.
+- `QA_NETWORK_FIREWALL_REQUIRED=0` — set `1` to warn when no active firewall
+  is detected.
 - `QA_DEEP_AUTO=1` — queue layer-2 tracing for critical layer-1 findings.
 - `QA_DEEP_DURATION_S=30`, `QA_DEEP_MAX_DURATION_S=120` — trace window.
 - `QA_DEEP_REQUEST_COOLDOWN_S=1800` — minimum gap per finding.

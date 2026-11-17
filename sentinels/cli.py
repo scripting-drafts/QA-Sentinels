@@ -15,8 +15,8 @@ from datetime import datetime
 
 from . import (
     boot, compat, config, correlate, crosscheck, db, deep, detect, evidence, faultcore,
-    hardware, holds, ingest, inventory, legal, logs, lsm, notify, posture, query,
-    raise_ticket, report, sampler, security, shutdown, tickets, trace, triage,
+    hardware, holds, ingest, inventory, legal, logs, lsm, network, notify, posture,
+    query, raise_ticket, report, sampler, security, shutdown, tickets, trace, triage,
 )
 from .util import fmt_duration, iso, parse_iso, read_text, run, sha256_file, utcnow
 
@@ -279,6 +279,45 @@ def cmd_hardware(args) -> int:
             print(f"[{finding['severity']}] {finding['rule']} {finding['subject']}")
             print(f"  {finding['detail'][:200]}")
         return 1 if result.get("failed") else 0
+
+
+def cmd_network(args) -> int:
+    with db.session() as conn:
+        if args.action == "check":
+            data = network.availability()
+            print(json.dumps(data, indent=2, sort_keys=True))
+            return 0 if data["ready"] else 1
+        if args.action == "show":
+            data = network.latest(conn)
+            if args.full:
+                print(json.dumps(data, indent=2, default=str))
+                return 0
+            if not data:
+                print("no network run yet (qa network collect)")
+                return 0
+            run = data["run"]
+            print(f"network run {run['id']} at {run['ts']} status={run['status']} "
+                  f"({run['duration_ms']} ms)")
+            print(f"  digest  : {run['digest']}")
+            print(f"  counts  : {run['counts']}")
+            print(f"  sources : {run['sources']}")
+            if data["diffs"]:
+                print(f"  changes : {len(data['diffs'])}")
+                for diff in data["diffs"][: args.limit]:
+                    print(f"    {diff['change']:7s} {diff['kind']:10s} {diff['item']}")
+            return 0
+        result = network.scan(conn)
+        print(json.dumps(
+            {key: value for key, value in result.items()
+             if key not in ("findings", "diffs")},
+            indent=2, sort_keys=True,
+        ))
+        for diff in result["diffs"][: args.limit]:
+            print(f"  {diff[3]:7s} {diff[2]:10s} {diff[4]}")
+        for finding in result["findings"][: args.limit]:
+            print(f"[{finding['severity']}] {finding['rule']} {finding['subject']}")
+            print(f"  {finding['detail'][:200]}")
+        return 1 if result["status"] != "ok" else 0
 
 
 def cmd_security(args) -> int:
@@ -645,6 +684,9 @@ def cmd_status(args) -> int:
         inv = conn.execute("SELECT * FROM inventory_runs ORDER BY id DESC LIMIT 1").fetchone()
         hw = conn.execute("SELECT * FROM hardware_runs ORDER BY id DESC LIMIT 1").fetchone()
         lsm_row = conn.execute("SELECT * FROM lsm_runs ORDER BY id DESC LIMIT 1").fetchone()
+        net_row = conn.execute(
+            "SELECT * FROM network_runs ORDER BY id DESC LIMIT 1"
+        ).fetchone()
         bundles = scalar("SELECT COUNT(*) FROM bundles")
         drafts = scalar("SELECT COUNT(*) FROM ticket_drafts")
         chain_head = ""
@@ -667,6 +709,14 @@ def cmd_status(args) -> int:
                   f"({hw['duration_ms']} ms) sources={hw['sources']}")
         else:
             print("  hardware tier : no runs yet (qa hardware collect)")
+        print(f"  last network  : {db.meta_get(conn, 'last_network_ts') or 'never'}")
+        if net_row:
+            print(f"  network tier  : run {net_row['id']} {net_row['status']} "
+                  f"({net_row['duration_ms']} ms) "
+                  f"next {db.meta_get(conn, 'next_network_ts') or 'n/a'}")
+            print(f"  network state : {net_row['counts']}")
+        else:
+            print("  network tier  : no runs yet (qa network collect)")
         print(f"  database      : {samples} samples, {events} events, {crashes} crashes")
         print(f"  critical      : {critical} events; fault-core-correlated crashes: {faultcore_crashes}")
         print(f"  fault-core    : {faultcore.integration_state()}")
@@ -797,6 +847,18 @@ def cmd_preflight(args) -> int:
         )
     )
     checks.append(("fault-core triage dossier", config.TRIAGE_DIR.exists(), str(config.TRIAGE_DIR)))
+    net_ready = network.availability()
+    checks.append(
+        (
+            "network inventory (ip/ss)",
+            net_ready["ready"],
+            ", ".join(
+                f"{name}={value['status']}"
+                for name, value in net_ready["checks"].items()
+                if not value["ok"]
+            ),
+        )
+    )
     failed = 0
     for name, ok, detail in checks:
         print(f"[{'ok' if ok else 'FAIL'}] {name}" + (f" — {detail}" if detail and not ok else ""))
@@ -1078,6 +1140,42 @@ def cmd_cycle(args) -> int:
                 failed += 1
                 result["inventory_error"] = str(exc)[:300]
                 db.record_run(conn, "cycle/inventory", False, str(exc))
+
+        # Network tier: link/address/route/DNS/tunnel/firewall/listener state.
+        # Missing optional tools are recorded as partial coverage, not failures.
+        if config.NETWORK_ENABLE and network.is_due(conn):
+            try:
+                nr = network.scan(conn)
+                result["network"] = {
+                    "run_id": nr["run_id"],
+                    "status": nr["status"],
+                    "digest": nr["digest"],
+                    "counts": nr["counts"],
+                    "diffs": len(nr["diffs"]),
+                    "sources": nr["sources"],
+                    "errors": nr["errors"],
+                    "new": nr["new"],
+                    "by_severity": nr["by_severity"],
+                    "next": nr["next_ts"],
+                }
+                if nr["new"]:
+                    findings_dirty = True
+                    from . import report as report_mod
+
+                    report_mod.append_journal(
+                        conn,
+                        f"Network findings: {nr['new']} new",
+                        "\n".join(
+                            f"- **{finding['severity']}** `{finding['rule']}` "
+                            f"{finding['subject']}: {finding['detail'][:180]}"
+                            for finding in nr["findings"][:20]
+                        ) + "\n",
+                        "network",
+                    )
+            except Exception as exc:  # noqa: BLE001
+                failed += 1
+                result["network_error"] = str(exc)[:300]
+                db.record_run(conn, "cycle/network", False, str(exc))
 
         current_boot = (data or {}).get("boot_id") or ""
         startup_done_for = db.meta_get(conn, "startup_report_boot")
@@ -1571,6 +1669,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--sources", help="comma-separated source list: ras,storage,gpu,bmc,sensors,turbostat,pcm,uncore,vendor")
     s.add_argument("--limit", type=int, default=50)
     s.set_defaults(func=cmd_hardware)
+
+    s = sub.add_parser(
+        "network",
+        help="collect read-only network, DNS, tunnel, firewall and listener state",
+    )
+    s.add_argument("action", nargs="?", choices=("collect", "show", "check"), default="collect")
+    s.add_argument("--limit", type=int, default=50)
+    s.add_argument("--full", action="store_true", help="show every stored reading")
+    s.set_defaults(func=cmd_network)
 
     s = sub.add_parser(
         "security",

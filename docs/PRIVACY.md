@@ -8,10 +8,15 @@ telemetry or upload captured data.
 - CPU, memory, kernel, process, and hardware samples.
 - Journal warnings/errors and crash records.
 - LSM state, package state, inventory diffs, and optional fault-core context.
+- Network state: interfaces, addresses, routes, DNS, listener sockets, firewall
+  summaries, tunnel state and traffic counters. SSIDs, BSSIDs, WireGuard keys
+  and peer endpoints are hashed; Netplan and firewall rules are hashed, not
+  copied.
 - Reports, tickets, evidence bundles, and logs under the workspace.
 
-Captured data can include usernames, command lines, hostnames, process names,
-and crash context. Treat evidence bundles as sensitive.
+Captured data can include usernames, command lines, hostnames, network
+addresses/routes, process names, and crash context. Treat evidence bundles as
+sensitive.
 
 ## Where it stays
 
@@ -25,8 +30,8 @@ The QA Dashboard reads this data locally. It does not upload it.
 ## Retention
 
 Retention is controlled by settings and environment variables for events,
-samples, process snapshots, inventory, drafts, and raise lookback. A value of
-`0` disables pruning for that category. Evidence bundles are files; remove them
+samples, process snapshots, inventory, network runs, drafts, and raise lookback.
+A value of `0` disables pruning for that category. Evidence bundles are files; remove them
 according to your retention policy.
 
 ## Sharing

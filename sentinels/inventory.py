@@ -3,7 +3,7 @@
 Each run stores (layer, item, value) for:
   L0-platform  firmware/DMI/CPU topology/GPU/NVMe
   L1-kernel    release, cmdline, sysctls, modules, boot params
-  L2-services  systemd units, failed units, listening sockets, timers
+  L2-services  systemd units, failed units, timers
   L3-packages  every installed dpkg package and version
   L4-userland  long-lived processes (comm+exe), key runtime versions
   L5-session   desktop/session identity and versions
@@ -170,19 +170,6 @@ def _services(out: dict) -> None:
             parts = line.split()
             if parts and parts[-1].endswith(".timer"):
                 _put(out, "L2-services", f"timer/{parts[-1]}", "present")
-
-    rc, sockets, _ = run(["ss", "-lntupH"], timeout=20)
-    if rc == 0:
-        for line in sockets.splitlines():
-            parts = line.split()
-            if len(parts) < 5:
-                continue
-            proto, local = parts[0], parts[3]
-            proc = ""
-            m = re.search(r'users:\(\("([^"]+)"', line)
-            if m:
-                proc = m.group(1)
-            _put(out, "L2-services", f"listen/{proto}/{local}", proc)
 
 
 def _packages(out: dict) -> None:

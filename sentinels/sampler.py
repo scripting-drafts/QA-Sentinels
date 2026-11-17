@@ -124,6 +124,24 @@ def prune(conn) -> None:
         conn.execute(
             "DELETE FROM inventory_runs WHERE ts < datetime('now', ?)", (cutoff,)
         )
+    if config.NETWORK_RETENTION_DAYS > 0:
+        net_cutoff = f"-{config.NETWORK_RETENTION_DAYS} days"
+        conn.execute(
+            "DELETE FROM network_items WHERE run_id IN "
+            "(SELECT id FROM network_runs WHERE ts < datetime('now', ?))",
+            (net_cutoff,),
+        )
+        conn.execute(
+            "DELETE FROM network_metrics WHERE run_id IN "
+            "(SELECT id FROM network_runs WHERE ts < datetime('now', ?))",
+            (net_cutoff,),
+        )
+        conn.execute(
+            "DELETE FROM network_diffs WHERE ts < datetime('now', ?)", (net_cutoff,)
+        )
+        conn.execute(
+            "DELETE FROM network_runs WHERE ts < datetime('now', ?)", (net_cutoff,)
+        )
     hw_cutoff = f"-{config.HARDWARE_RETENTION_DAYS} days"
     conn.execute(
         "DELETE FROM hardware_items WHERE run_id IN "

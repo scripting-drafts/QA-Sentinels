@@ -6,7 +6,7 @@ import os
 import tarfile
 from datetime import datetime, timedelta, timezone
 
-from . import config, db, detect, hardware, lsm, posture, report, triage
+from . import config, db, detect, hardware, lsm, network, posture, report, triage
 from .util import (
     read_text, run, sha256_file, sha256_text, iso, utcnow, write_json,
     write_text_atomic, redact,
@@ -125,6 +125,7 @@ def make_bundle(conn, reason: str = "manual", hours: int = 24, make_tar: bool = 
     put("samples-summary.json", _compact_samples(conn, since))
     put("inventory.json", inventory)
     put("inventory-diff.json", diffs)
+    put("network.json", network.evidence(conn))
     hardware_data = hardware.latest(conn, complete=True)
     if hardware_data:
         hardware_data["run"]["detail"] = redact(hardware_data["run"].get("detail") or "")
