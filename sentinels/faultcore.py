@@ -251,6 +251,21 @@ def presence(topo: dict) -> str:
     return "unknown (CPU topology is unavailable)"
 
 
+def cpu_set(topo: dict) -> str:
+    """The configured faultlab CPU set, independent of the physical id."""
+    cpus = topo.get("configured") or list(config.FAULT_CORE_CPUS)
+    return ", ".join(str(cpu) for cpu in cpus)
+
+
+def presence_summary(topo: dict) -> str:
+    """Compact presence text for a correlation heading."""
+    if topo.get("present") is True:
+        cpus = cpu_set(topo) or ", ".join(
+            str(cpu) for cpu in topo.get("logical") or [])
+        return f"present (CPUs: {cpus} online)" if cpus else "present (CPUs online)"
+    return presence(topo)
+
+
 def integration_state() -> str:
     """Human-readable state of the optional faultlab integration.
 

@@ -124,11 +124,19 @@ def _environment(topology: dict | None = None, issue: dict | None = None,
             if re.search(r"VGA|3D|Display", line):
                 gpu = re.sub(r"\s+", " ", line.strip())
                 break
+    if topo.get("state") in ("retired", "offline"):
+        cpus = faultcore.cpu_set(topo)
+        fault_line = (
+            f"- Fault Injection CPUs Offline (CPUs: {cpus})"
+            if cpus else "- Fault Injection CPUs Offline")
+    else:
+        fault_line = (
+            f"- {faultcore.display_label(topo)}: {faultcore.presence(topo)}")
     lines = [
         f"- OS: {os_release.get('PRETTY_NAME', 'Linux')}",
         f"- Kernel: {read_text('/proc/sys/kernel/osrelease')}",
         f"- CPU: {cpu or 'unknown'} ({topo.get('logical_cpus') or os.cpu_count()} logical CPUs)",
-        f"- {faultcore.display_label(topo)}: {faultcore.presence(topo)}",
+        fault_line,
         f"- Memory: {human_bytes(mem_kb)}",
     ]
     for item in software:
@@ -242,6 +250,39 @@ def _repro_block(vendor: str, topology: dict | None = None) -> list[str]:
         "1. Reproduce with the sentinel running (`~/QA-Sentinels/bin/qa status`).",
         "2. Attach the latest evidence bundle.",
     ]
+
+
+def _reproduction_viability(topo: dict, vendor: str) -> str:
+    """Rough, explicitly orientative odds that the repro steps can be followed."""
+    state = topo.get("state")
+    if vendor in ("mozilla", "canonical-kernel", "hardware"):
+        if state in ("retired", "offline"):
+            return (
+                "**~20%** — the fault-injection CPUs are offline; the affinity "
+                "comparison cannot be exercised, but the control path remains "
+                "reproducible.")
+        if topo.get("present") is True:
+            return (
+                "**~70%** — the fault core is online; the affinity comparison "
+                "and control run are both reproducible.")
+        if topo.get("present") is False:
+            return (
+                "**~35%** — the configured fault core is absent; only an "
+                "approximate control-core comparison is possible.")
+        if state == "unconfigured":
+            return (
+                "**~50%** — no fault core is configured; reproduction depends "
+                "on the available hardware.")
+        return (
+            "**~50%** — the fault-core topology is undetermined; reproduction "
+            "depends on the host.")
+    if vendor == "nvidia":
+        return (
+            "**~60%** — the driver path is reproducible, but it requires a "
+            "matching GPU and driver state.")
+    return (
+        "**~90%** — the steps use the local sentinel and do not depend on "
+        "the fault core.")
 
 
 def held_context(issue: dict) -> dict:
@@ -533,14 +574,19 @@ def _draft(issue: dict, bundle: dict | None, identity: dict, consent: bool) -> t
     ]
     if issue.get("notes"):
         lines += ["## Consistency", "", issue["notes"], ""]
+    if topo.get("state") not in ("retired", "offline"):
+        lines += [
+            f"## {faultcore.display_label(topo)} correlation — {faultcore.presence_summary(topo)}",
+            "",
+            *_faultcore_table(rows, topo),
+            "",
+        ]
     lines += [
-        f"## {faultcore.display_label(topo)} correlation — {faultcore.presence(topo)}",
-        "",
-        *_faultcore_table(rows, topo),
-        "",
         "## Reproduction",
         "",
         *_repro_block(issue["vendor"], topo),
+        "",
+        f"Reproduction viability: {_reproduction_viability(topo, issue['vendor'])}",
         "",
         "## Evidence",
         "",

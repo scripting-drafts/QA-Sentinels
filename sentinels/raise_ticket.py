@@ -25,7 +25,10 @@ Naming convention: ``logs.json`` is the active evidence snapshot; ``*.jsonl``
 is append-only history. Legacy ``rows.json`` is migrated automatically.
 
 A ticket is keyed by signature, not by vendor or cluster kind, so vendor
-reclassification and event/correlation views update one directory.
+reclassification and event/correlation views update one directory. If an
+operator moves a ticket to another bucket, the lifecycle records a sticky
+manual event and the coded workflow neither moves it back nor stages a
+duplicate from its draft.
 """
 from __future__ import annotations
 
@@ -348,6 +351,45 @@ def _ensure_classified_from_manifest(directory, bucket: str) -> None:
         reason="first classification recovered from the existing manifest",
         score=score,
     )
+
+
+def _actual_bucket(bucket: str) -> str:
+    """Normalise the legacy archive names to their lifecycle names."""
+    return bucket[7:] if bucket.startswith("legacy-") else bucket
+
+
+def _manual_bucket(directory, bucket: str) -> str:
+    """Return the actual bucket when the user moved the ticket outside the code.
+
+    The lifecycle log is the coded workflow's last known position. Any
+    difference is a manual move and becomes sticky: the code must not move the
+    ticket back or stage a duplicate from its draft.
+    """
+    actual = _actual_bucket(bucket)
+    entries = _read_lifecycle(directory)
+    recorded = ""
+    last = entries[-1] if entries else None
+    if last is not None:
+        recorded = str(last.get("to") or "")
+    else:
+        recorded = str(_read_manifest(directory).get("bucket") or "")
+        if recorded and recorded != actual:
+            _ensure_classified_from_manifest(directory, recorded)
+            last = None
+    if not recorded:
+        return ""
+    if last is not None and last.get("event") == "manual" and recorded == actual:
+        return actual
+    if recorded == actual:
+        return ""
+    _append_lifecycle(directory, {
+        "ts": iso(),
+        "event": "manual",
+        "from": recorded,
+        "to": actual,
+        "reason": "bucket changed outside the coded workflow",
+    })
+    return actual
 
 
 def _lifecycle_cell(value) -> str:
@@ -717,11 +759,20 @@ def _bucket_roots() -> dict:
 def _legacy_bucket_roots() -> dict:
     """Older/manual archives that still contain real ticket directories."""
     base = config.RAISE_DIR.parent
-    return {
+    roots = {
         "legacy-raised": base / "raised",
         "legacy-fixed": base / "fixed",
         "legacy-solved": base / "solved",
     }
+    known = {"raise", "standby", "rejected", "drafts",
+             "raised", "fixed", "solved"}
+    try:
+        for child in base.iterdir():
+            if child.is_dir() and child.name not in known:
+                roots[f"legacy-{child.name}"] = child
+    except OSError:
+        pass
+    return roots
 
 
 def _existing_by_identity() -> dict[str, list[dict]]:
@@ -741,8 +792,11 @@ def _existing_by_identity() -> dict[str, list[dict]]:
             signature = str(manifest.get("signature") or "")
             if not vendor or not signature:
                 continue
+            manual = _manual_bucket(path, bucket)
             grouped.setdefault(_identity(signature), []).append({
                 "bucket": bucket,
+                "actual_bucket": _actual_bucket(bucket),
+                "manual": bool(manual),
                 "legacy": bucket.startswith("legacy-"),
                 "path": path,
                 "manifest": manifest,
@@ -767,7 +821,10 @@ def _dedupe_existing(grouped: dict[str, list[dict]],
     winners: dict[str, dict] = {}
     merged: list[dict] = []
     for ident, items in grouped.items():
-        active = [item for item in items if not item["legacy"]]
+        active = [
+            item for item in items
+            if not item["legacy"] or item.get("manual")
+        ]
         if not active:
             # Keep legacy archives intact when no live bucket owns the ticket.
             continue
@@ -775,6 +832,7 @@ def _dedupe_existing(grouped: dict[str, list[dict]],
         winner = max(
             active,
             key=lambda item: (
+                item.get("manual", False),
                 item["bucket"] == target,
                 -KIND_RANK.get(item["kind"], 3),
                 item["generated"],
@@ -827,8 +885,12 @@ def reconcile(conn, desired: dict[str, str],
             if path.is_dir() and path.name not in present:
                 present[path.name] = bucket
 
-    reactivated, stood_down, rejected_moves = [], [], []
+    reactivated, stood_down, rejected_moves, manual = [], [], [], []
     for name, source in sorted(present.items()):
+        directory = roots[source] / name
+        if _manual_bucket(directory, source):
+            manual.append(name)
+            continue
         # A rejection stands until the issue reproduces again: a rejected
         # ticket must not drift to standby just because evidence aged out.
         target = desired.get(name, "rejected" if source == "rejected" else "standby")
@@ -892,7 +954,7 @@ def reconcile(conn, desired: dict[str, str],
             stood_down.append({"ticket": name, "reason": reason[:300]})
 
     return {"reactivated": reactivated, "stood_down": stood_down,
-            "rejected": rejected_moves}
+            "rejected": rejected_moves, "manual": manual}
 
 
 def _write_bucket_index(root, record: str, title: str, empty: str) -> None:
@@ -963,6 +1025,9 @@ Vendor: **{issue['vendor']}** — {issue['kind']} cluster `{issue['key']}`
 4. Post through the vendor channel in `ticket.md`. Submission is manual by design.
 5. Keep `evidence/manifest.json`: it is what makes this ticket auditable later.
 
+Moving this directory to another bucket is a manual override. The raise gate
+will leave it there and will not recreate it from the draft.
+
 Viability: {verdict['score']}/{verdict['max_score']} checks passed.
 """
 
@@ -1002,6 +1067,7 @@ def run(conn, days: int | None = None, min_count: int | None = None,
     bundle = dict(bundle_row) if bundle_row else None
 
     raised, rejected, rejected_staged = [], [], []
+    manual_skipped: list[dict] = []
     assessments: dict[str, dict] = {}
     desired: dict[str, str] = {}
     desired_by_ident: dict[str, str] = {}
@@ -1058,6 +1124,14 @@ def run(conn, days: int | None = None, min_count: int | None = None,
         chosen = existing.get(ident)
         name = chosen["path"].name if chosen else _dir_name(draft, issue)
         group["name"] = name
+        if chosen and chosen.get("manual"):
+            group["manual"] = True
+            manual_skipped.append({
+                "ticket": name,
+                "bucket": chosen.get("actual_bucket") or chosen["bucket"],
+                "signature": group["display"][:120],
+            })
+            continue
         if verdict["viable"] and issue:
             desired[name] = "raise"
         elif issue and verdict.get("hold_explained"):
@@ -1089,6 +1163,8 @@ def run(conn, days: int | None = None, min_count: int | None = None,
         if not issue:
             continue
         draft, verdict, name = group["draft"], group["verdict"], group["name"]
+        if group.get("manual"):
+            continue
         if verdict["viable"]:
             directory = config.RAISE_DIR / name
             if _already_staged(directory, issue):
@@ -1194,4 +1270,5 @@ def run(conn, days: int | None = None, min_count: int | None = None,
         "stood_down": moves["stood_down"],
         "reactivated": moves["reactivated"],
         "rejected_moves": moves["rejected"],
+        "manual": manual_skipped,
     }

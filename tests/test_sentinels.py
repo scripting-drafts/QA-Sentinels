@@ -184,14 +184,21 @@ class TicketCorrelationTests(unittest.TestCase):
         self.assertIn("mozilla", vendors)
         self.assertIn("hardware", vendors)
 
-    def test_draft_keeps_faultcore_rows_and_withholds_identity(self):
+    def test_draft_summarizes_offline_faultcore_and_withholds_identity(self):
         from sentinels import tickets
 
+        retired = {"present": None, "state": "retired", "logical": [],
+                   "physical_id": None, "configured": [2, 8],
+                   "degraded": [2, 8]}
         issues = tickets._collect_issues(self._conn(), days=7)
         issue = next(i for i in issues if i["vendor"] == "hardware")
-        title, body = tickets._draft(issue, None, {}, False)
+        with mock.patch.object(tickets.faultcore, "topology",
+                               return_value=retired):
+            title, body = tickets._draft(issue, None, {}, False)
         self.assertIn("fault core", body.lower())
-        self.assertIn("| yes |", body)
+        self.assertIn("- Fault Injection CPUs Offline", body)
+        self.assertNotIn("## Fault core (CPUs 2,8) correlation", body)
+        self.assertNotIn("| yes |", body)
         self.assertIn("withheld", body)
         self.assertNotIn("linkedin.com", body.lower())
 
@@ -1925,6 +1932,108 @@ class RaiseGateTests(unittest.TestCase):
             self.assertFalse((root / "raise" / "nvidia-raise-new").exists())
             self.assertTrue((root / "standby" / "nvidia-standby-old").exists())
             self.assertEqual(merged[0]["bucket"], "raise")
+
+    def test_manual_bucket_change_is_not_reverted(self):
+        import json
+        import pathlib
+        import tempfile
+        from unittest import mock
+        from sentinels import config, raise_ticket
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            name = "nvidia-manual"
+            evidence = root / "standby" / name / "evidence"
+            evidence.mkdir(parents=True)
+            (evidence / "manifest.json").write_text(json.dumps({
+                "vendor": "nvidia",
+                "signature": "NVRM: Xid (PCI:0000:01:00): 79",
+                "kind": "event", "bucket": "raise",
+                "generated": "2026-11-01T00:00:00Z",
+            }), encoding="utf-8")
+            (evidence / "lifecycle.jsonl").write_text(json.dumps({
+                "ts": "2026-11-01T00:00:00Z", "event": "classified",
+                "from": "", "to": "raise", "reason": "first classification",
+            }) + "\n", encoding="utf-8")
+            patches = [
+                mock.patch.object(config, "RAISE_DIR", root / "raise"),
+                mock.patch.object(config, "STANDBY_DIR", root / "standby"),
+                mock.patch.object(config, "REJECT_DIR", root / "rejected"),
+            ]
+            for patcher in patches:
+                patcher.start()
+            try:
+                result = raise_ticket.reconcile(
+                    None, {name: "raise"},
+                    {name: {"verdict": {"reasons": []},
+                            "reproduced": True}},
+                )
+                self.assertTrue((root / "standby" / name).exists())
+                self.assertFalse((root / "raise" / name).exists())
+                self.assertIn(name, result["manual"])
+                # A second pass must not append another manual event or move it.
+                raise_ticket.reconcile(
+                    None, {name: "raise"},
+                    {name: {"verdict": {"reasons": []},
+                            "reproduced": True}},
+                )
+            finally:
+                for patcher in reversed(patches):
+                    patcher.stop()
+            log = [
+                json.loads(line) for line in
+                (root / "standby" / name / "evidence" / "lifecycle.jsonl")
+                .read_text().splitlines() if line.strip()
+            ]
+            self.assertEqual(
+                [entry["event"] for entry in log],
+                ["classified", "manual"])
+            self.assertEqual(log[-1]["from"], "raise")
+            self.assertEqual(log[-1]["to"], "standby")
+
+    def test_run_does_not_restage_a_manually_moved_ticket(self):
+        import json
+        import pathlib
+        import tempfile
+        from unittest import mock
+        from sentinels import config, raise_ticket
+
+        conn = self._conn()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            name = "nvidia-manual"
+            evidence = root / "standby" / name / "evidence"
+            evidence.mkdir(parents=True)
+            (evidence / "manifest.json").write_text(json.dumps({
+                "vendor": "nvidia",
+                "signature": "NVRM: Xid (PCI:0000:01:00): 79",
+                "kind": "event", "bucket": "raise",
+                "generated": "2026-11-01T00:00:00Z",
+            }), encoding="utf-8")
+            (evidence / "lifecycle.jsonl").write_text(json.dumps({
+                "ts": "2026-11-01T00:00:00Z", "event": "classified",
+                "from": "", "to": "raise", "reason": "first classification",
+            }) + "\n", encoding="utf-8")
+            draft_path = root / "draft.md"
+            draft_path.write_text("# draft\n", encoding="utf-8")
+            conn.execute(
+                "INSERT INTO ticket_drafts(ts,vendor,path,title,issue_key)"
+                " VALUES(datetime('now'),'nvidia',?,?,'k1')",
+                (str(draft_path), "NVRM: Xid 79"),
+            )
+            issue = self._issue()
+            with mock.patch.object(config, "RAISE_DIR", root / "raise"), \
+                 mock.patch.object(config, "STANDBY_DIR", root / "standby"), \
+                 mock.patch.object(config, "REJECT_DIR", root / "rejected"), \
+                 mock.patch.object(raise_ticket.tickets, "collect_issues",
+                                   return_value=[issue]), \
+                 mock.patch.object(raise_ticket.report, "append_journal"):
+                result = raise_ticket.run(conn, notify_ready=False)
+            self.assertFalse((root / "raise" / name).exists())
+            self.assertTrue((root / "standby" / name).exists())
+            self.assertEqual(result["viable"], 0)
+            self.assertTrue(any(item["ticket"] == name
+                                for item in result["manual"]))
 
     def test_legacy_rows_evidence_is_normalized(self):
         import json

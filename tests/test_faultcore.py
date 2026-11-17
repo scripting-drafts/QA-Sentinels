@@ -264,6 +264,15 @@ class TopologyTests(unittest.TestCase):
         self.assertEqual(faultcore.theme_tag(present), "physical core 2 present")
         self.assertEqual(faultcore.theme_tag(absent), "fault core (CPUs 2,8) absent")
         self.assertIn("undetermined", faultcore.theme_tag(retired))
+        self.assertEqual(faultcore.cpu_set(present), "2, 8")
+        self.assertEqual(
+            faultcore.presence_summary(present),
+            "present (CPUs: 2, 8 online)")
+        configured_only = dict(present, logical=[2, 8], configured=[2])
+        self.assertEqual(faultcore.cpu_set(configured_only), "2")
+        self.assertEqual(
+            faultcore.presence_summary(configured_only),
+            "present (CPUs: 2 online)")
 
 
 class EventMatchingTests(unittest.TestCase):
@@ -312,13 +321,19 @@ class TicketThemeTests(unittest.TestCase):
         return {"present": None, "state": "retired", "logical": [],
                 "physical_id": None, "configured": [2, 8], "degraded": [2, 8]}
 
+    def _offline(self):
+        return {"present": None, "state": "offline", "logical": [],
+                "physical_id": None, "configured": [2, 8], "degraded": [2, 8]}
+
     def test_title_and_environment_state_presence(self):
         with mock.patch.object(tickets.faultcore, "topology", return_value=self._present()):
             title, body = tickets._draft(self._issue(), None, {}, False)
         self.assertIn("[physical core 2 present]", title)
         self.assertIn("- Physical core 2: present", body)
-        self.assertIn("## Physical core 2 correlation — present", body)
+        self.assertIn(
+            "## Physical core 2 correlation — present (CPUs: 2, 8 online)", body)
         self.assertIn("`2,8`", body)
+        self.assertIn("Reproduction viability: **~70%**", body)
 
     def test_title_and_environment_state_absence(self):
         with mock.patch.object(tickets.faultcore, "topology", return_value=self._absent()):
@@ -327,13 +342,44 @@ class TicketThemeTests(unittest.TestCase):
         self.assertIn("- Fault core (CPUs 2,8): absent", body)
         self.assertIn("## Fault core (CPUs 2,8) correlation — absent", body)
         self.assertIn("fault-core comparison was absent", body)
+        self.assertIn("Reproduction viability: **~35%**", body)
 
     def test_title_and_environment_state_retired(self):
         with mock.patch.object(tickets.faultcore, "topology", return_value=self._retired()):
             title, body = tickets._draft(self._issue(), None, {}, False)
         self.assertIn("[fault core (CPUs 2,8) retired (undetermined)]", title)
-        self.assertIn("- Fault core (CPUs 2,8): retired", body)
+        self.assertIn("- Fault Injection CPUs Offline (CPUs: 2, 8)", body)
+        self.assertNotIn("- Fault core (CPUs 2,8): retired", body)
+        self.assertNotIn("## Fault core (CPUs 2,8) correlation", body)
         self.assertIn("fault-core comparison was undetermined", body)
+        self.assertIn("Reproduction viability: **~20%**", body)
+
+    def test_title_and_environment_state_offline(self):
+        with mock.patch.object(tickets.faultcore, "topology", return_value=self._offline()):
+            _, body = tickets._draft(self._issue(), None, {}, False)
+        self.assertIn("- Fault Injection CPUs Offline (CPUs: 2, 8)", body)
+        self.assertNotIn("## Fault core (CPUs 2,8) correlation", body)
+        self.assertIn("Reproduction viability: **~20%**", body)
+
+    def test_non_default_configured_cpus_drive_the_labels(self):
+        present = {"present": True, "state": "present", "logical": [4, 10],
+                   "physical_cores": 6, "logical_cpus": 12, "physical_id": 4,
+                   "configured": [4, 10], "degraded": []}
+        with mock.patch.object(tickets.faultcore, "topology", return_value=present):
+            title, body = tickets._draft(self._issue(), None, {}, False)
+        self.assertIn("[physical core 4 present]", title)
+        self.assertIn(
+            "## Physical core 4 correlation — present (CPUs: 4, 10 online)", body)
+        self.assertIn("`4,10`", body)
+        self.assertNotIn("core 2", body.lower())
+
+        retired = {"present": None, "state": "retired", "logical": [],
+                   "physical_id": None, "configured": [4, 10],
+                   "degraded": [4, 10]}
+        with mock.patch.object(tickets.faultcore, "topology", return_value=retired):
+            _, body = tickets._draft(self._issue(), None, {}, False)
+        self.assertIn("- Fault Injection CPUs Offline (CPUs: 4, 10)", body)
+        self.assertNotIn("core 2", body.lower())
 
 
 if __name__ == "__main__":
