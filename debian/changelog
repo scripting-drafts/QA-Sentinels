@@ -1,3 +1,11 @@
+qa-sentinels (1.2.1) jammy; urgency=medium
+
+  * Close the legal register trademark review with a documented affiliation
+    notice in docs/LEGAL.md.
+  * Refresh companion versions in the legal register.
+
+ -- Gerard Sala <creative.gsp@gmail.com>  Tue, 17 Nov 2026 09:25:49 +0100
+
 qa-sentinels (1.2.0) jammy; urgency=medium
 
   * Add the `qa legal` own-product license and legal compliance register.

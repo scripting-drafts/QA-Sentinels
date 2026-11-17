@@ -23,6 +23,17 @@ This document is an inventory and release checklist, not legal advice.
 6. Run the third-party scanner against the repository and review blocked or
    unknown findings.
 
+## Trademarks and affiliation
+
+QA Sentinels is an independent project by Gerard Sala. Ubuntu, Canonical,
+Launchpad, Debian, GNOME, Linux, Python, SQLite, libbpf, and other names are
+trademarks of their respective owners and are used descriptively.
+
+The shared `ppa:toomanypatterns/ubuntu-backup` archive is a distribution
+channel. It is not an endorsement by Ubuntu, Canonical, Debian, or any other
+project. No affiliation or endorsement is claimed for the QA Sentinels name or
+the PPA.
+
 ## Distribution notes
 
 - Python and SQLite are host runtime dependencies, not bundled.

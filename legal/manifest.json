@@ -5,20 +5,20 @@
   "copyright": "Copyright (c) 2026 Gerard Sala",
   "source": "https://github.com/scripting-drafts/QA-Sentinels",
   "homepage": "https://github.com/scripting-drafts/QA-Sentinels",
-  "lastReviewed": "2026-11-16",
-  "reviewedVersion": "1.2.0",
+  "lastReviewed": "2026-11-17",
+  "reviewedVersion": "1.2.1",
   "reviewedComponents": {
-    "qa-sentinels": "1.2.0",
+    "qa-sentinels": "1.2.1",
     "python3": "3.10+",
     "sqlite": "3.37+",
-    "qa-dashboard": "0.4.0",
+    "qa-dashboard": "0.5.7",
     "qa-license-scanner": "0.1.0"
   },
   "components": [
     {
       "id": "qa-sentinels",
       "name": "QA Sentinels",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "versionFrom": "qa-sentinels",
       "license": "MIT",
       "scope": "project"
@@ -26,14 +26,14 @@
     {
       "id": "c-sampler",
       "name": "C sampler (qa_sample)",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "license": "MIT",
       "scope": "shipped"
     },
     {
       "id": "ebpf-tracer",
       "name": "eBPF tracer sources",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "license": "MIT",
       "scope": "shipped"
     },
@@ -65,7 +65,7 @@
     {
       "id": "qa-dashboard",
       "name": "QA Dashboard",
-      "version": "0.4.0",
+      "version": "0.5.7",
       "license": "MIT",
       "scope": "companion",
       "url": "https://github.com/scripting-drafts/QA-Dashboard"
@@ -162,9 +162,9 @@
     {
       "id": "trademark",
       "category": "trademark",
-      "status": "pending",
-      "date": "2026-11-16",
-      "note": "Confirm the QA Sentinels name and PPA affiliation notice."
+      "status": "reviewed",
+      "date": "2026-11-17",
+      "note": "Trademark and PPA affiliation notice added to docs/LEGAL.md; the QA name is descriptive and no endorsement is claimed."
     },
     {
       "id": "contributions",

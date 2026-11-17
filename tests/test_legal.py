@@ -18,9 +18,9 @@ class LegalRegisterTests(unittest.TestCase):
         data = legal.register(ROOT)
         self.assertTrue(data["ok"])
         self.assertEqual(data["summary"]["actions"], 0)
-        self.assertEqual(data["summary"]["overall"], "review")
+        self.assertEqual(data["summary"]["overall"], "ok")
         self.assertTrue(data["summary"]["version_ok"])
-        self.assertGreaterEqual(data["summary"]["pending_reviews"], 1)
+        self.assertEqual(data["summary"]["pending_reviews"], 0)
         self.assertTrue(all(item["available"] for item in data["documents"]))
 
     def test_manifest_rejects_path_traversal_and_bad_version(self):
