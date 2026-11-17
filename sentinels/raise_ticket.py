@@ -185,6 +185,43 @@ def _dir_name(draft: dict, issue: dict | None) -> str:
     return f"{vendor}-{_slug(signature)}-{_identity(signature)}"
 
 
+def _align_vendor_name(directory, vendor: str):
+    """Keep the vendor prefix truthful when a ticket is re-routed.
+
+    The directory name is an audit identity, but its leading vendor is read by
+    operators. A stale ``mozilla-`` prefix on a GNOME ticket sends the wrong
+    message, so only the prefix changes; the signature hash still identifies
+    the ticket. An existing destination wins: names are never merged.
+    """
+    name = directory.name
+    for known in sorted(classify.VENDOR_META, key=len, reverse=True):
+        prefix = f"{known}-"
+        if not name.startswith(prefix):
+            continue
+        if known == vendor:
+            return directory
+        candidate = directory.parent / f"{vendor}-{name[len(prefix):]}"
+        if candidate.exists():
+            return directory
+        # Backfill the first classification before the rename, so the
+        # lifecycle reads classified → renamed instead of the reverse.
+        _ensure_classified_from_manifest(
+            directory, str(_read_manifest(directory).get("bucket") or ""))
+        try:
+            directory.rename(candidate)
+        except OSError:
+            return directory
+        _append_lifecycle(candidate, {
+            "ts": iso(),
+            "event": "renamed",
+            "from": directory.name,
+            "to": candidate.name,
+            "reason": f"owner re-routed to {vendor}",
+        })
+        return candidate
+    return directory
+
+
 def _display(issue: dict | None, draft: dict | None = None) -> str:
     """Human-readable label; signatures stay masked for identity only."""
     return util.redact(
@@ -239,6 +276,9 @@ def _already_staged(directory, issue: dict, bucket: str = "raise") -> bool:
         return False
     manifest = _read_manifest(directory)
     if manifest.get("issue_key") != issue.get("key"):
+        return False
+    # A re-routed ticket must be rewritten even when the signature is stable.
+    if manifest.get("vendor") != issue.get("vendor"):
         return False
     if manifest.get("display") != _display(issue):
         return False
@@ -1122,7 +1162,11 @@ def run(conn, days: int | None = None, min_count: int | None = None,
     for ident, group in groups.items():
         draft, issue, verdict = group["draft"], group["issue"], group["verdict"]
         chosen = existing.get(ident)
-        name = chosen["path"].name if chosen else _dir_name(draft, issue)
+        path = chosen["path"] if chosen else None
+        if path is not None and not chosen.get("manual") and issue:
+            path = _align_vendor_name(path, str(issue.get("vendor") or ""))
+            chosen["path"] = path
+        name = path.name if path is not None else _dir_name(draft, issue)
         group["name"] = name
         if chosen and chosen.get("manual"):
             group["manual"] = True

@@ -27,16 +27,16 @@ from .util import iso, parse_iso, redact, sha256_text, utcnow
 def component_for_event(unit: str | None, message: str | None) -> tuple[str, str]:
     """Return (vendor, component-label) for one event."""
     vendor = classify.vendor_for(unit or "", message or "")
-    meta = classify.VENDOR_META.get(vendor, classify.VENDOR_META["local"])
-    label = (unit or "").split(".")[0] or meta["component"]
+    label = classify.component_for(
+        vendor, text=message or "", unit=unit or "")
     return vendor, label
 
 
 def component_for_crash(row: dict) -> tuple[str, str]:
-    blob = " ".join(
-        str(row.get(key) or "") for key in ("comm", "exe", "sig", "context")
+    vendor = classify.vendor_for_crash(
+        row.get("comm") or "", row.get("exe") or "",
+        row.get("sig") or "", row.get("context") or "",
     )
-    vendor = classify.vendor_for(blob)
     if row.get("faultcore_involved") == 1 and vendor == "local":
         vendor = "hardware"  # affinity evidence names the platform, not a package
     return vendor, (row.get("comm") or row.get("exe") or "unknown")

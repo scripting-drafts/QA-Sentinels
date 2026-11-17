@@ -9,7 +9,7 @@ import os
 import re
 from datetime import timedelta
 
-from . import classify, config, faultcore, correlate, db, holds, packages
+from . import classify, config, crash, faultcore, correlate, db, holds, packages
 from .util import (
     human_bytes, identity_for_ticket, iso, read_text, redact, run, sha256_text, utcnow,
 )
@@ -42,6 +42,8 @@ def _software_versions(issue: dict | None = None) -> list[dict]:
         vendor = issue.get("vendor")
         if vendor == "mozilla":
             candidates = ["firefox-esr", "firefox"]
+        elif vendor == "gnome":
+            candidates = ["gnome-shell", "mutter", "gjs"]
         elif vendor == "canonical-kernel":
             release = read_text("/proc/sys/kernel/osrelease")
             candidates = [f"linux-image-{release}", "linux-image-generic"]
@@ -157,7 +159,46 @@ def _environment(topology: dict | None = None, issue: dict | None = None,
     return lines
 
 
-def _repro_block(vendor: str, topology: dict | None = None) -> list[str]:
+def _issue_context(issue: dict | None) -> str:
+    if not issue:
+        return ""
+    for row in issue.get("rows") or []:
+        context = str(row.get("context") or "")
+        if context:
+            return context
+    return ""
+
+
+def _browser_crash(issue: dict | None) -> bool:
+    """True only for a Firefox-family process crash.
+
+    Vendor alone is not enough to select browser reproduction steps. GNOME
+    Shell embeds SpiderMonkey, so a shell crash contains ``libmozjs`` frames;
+    the browser's own marker is the executable, a Firefox child process name,
+    or ``libxul`` in the stack.
+    """
+    if not issue:
+        return True
+    # Browser repro steps reproduce a crash; an event or finding has no stack
+    # to drive them and would turn into a page-load guess.
+    if issue.get("kind") != "crash":
+        return False
+    for row in issue.get("rows") or []:
+        exe = str(row.get("exe") or "").lower()
+        comm = str(row.get("comm") or "").lower()
+        if "firefox" in exe or comm.startswith("firefox"):
+            return True
+        if comm in ("isolated web co", "web content", "webextensions",
+                    "gpu process", "socket thread", "geckomain",
+                    "rdd process", "utility process"):
+            return True
+        if "libxul" in str(row.get("context") or "").lower():
+            return True
+    return False
+
+
+def _repro_block(vendor: str, topology: dict | None = None,
+                 issue: dict | None = None) -> list[str]:
     topo = topology or faultcore.topology()
     present = topo.get("present") is True
     undetermined = topo.get("present") is None
@@ -167,7 +208,35 @@ def _repro_block(vendor: str, topology: dict | None = None) -> list[str]:
     if not siblings:
         siblings = ",".join(str(cpu) for cpu in config.FAULT_CORE_CPUS) or "unavailable"
     control = ",".join(str(cpu) for cpu in config.CONTROL_CPUS) or "0"
+    if vendor == "gnome":
+        frame = crash.faulting_frame(_issue_context(issue))
+        module = str((frame or {}).get("module") or "").lower()
+        if "mutter" in module:
+            owner = "mutter"
+        elif "gjs" in module or "mozjs" in module:
+            owner = "gjs"
+        else:
+            owner = "gnome-shell"
+        return [
+            "1. Reproduce on a GNOME session matching the report: record "
+            "`echo $XDG_SESSION_TYPE` and `gnome-shell --version`.",
+            "2. List the enabled extensions (`gsettings get org.gnome.shell "
+            "enabled-extensions`); repeat once with non-stock extensions disabled.",
+            f"3. Repeat the window action named in the stack until {owner} exits, "
+            "then record whether the faulting frame is unchanged.",
+            "4. Capture `coredumpctl info <pid>` and install the debug symbols "
+            "matching the recorded build-id before interpreting the frame.",
+            f"5. Report the faulting frame against {owner} together with the "
+            "session type, extension list and how many frames the signal handler covers.",
+        ]
     if vendor == "mozilla":
+        if not _browser_crash(issue):
+            return [
+                "1. Reproduce the action logged above on the same build; keep the "
+                "component version and its configuration unchanged.",
+                "2. Capture the same log line with the surrounding timestamp window.",
+                "3. Attach the evidence bundle and the exact component version.",
+            ]
         if present:
             pin = (
                 f"2. Pin the browser to the SMT siblings of {core}: "
@@ -252,6 +321,10 @@ def _repro_block(vendor: str, topology: dict | None = None) -> list[str]:
 def _reproduction_viability(topo: dict, vendor: str) -> str:
     """Rough, explicitly orientative odds that the repro steps can be followed."""
     state = topo.get("state")
+    if vendor == "gnome":
+        return (
+            "**~70%** — reproducible on a matching GNOME session, but the "
+            "extension set, session type and debug symbols must match the report.")
     if vendor in ("mozilla", "canonical-kernel", "hardware"):
         if state in ("retired", "offline"):
             return (
@@ -307,6 +380,8 @@ def _display_text(row: dict, fallback: str) -> str:
     """Human-readable text. Signatures stay masked only for grouping keys."""
     if row.get("sig"):
         name = row.get("comm") or (row.get("exe") or "").rsplit("/", 1)[-1]
+        # coredump truncates comm to 15 characters and leaves a trailing dash.
+        name = re.sub(r"-+$", "", str(name)) or str(name)
         text = f"{name} {row['sig']}".strip()
     else:
         text = (row.get("message") or "").strip().splitlines()
@@ -391,8 +466,10 @@ def collect_issues(conn, days: int = 7, include_local: bool = False) -> list[dic
             issue["severity"] = "critical"
 
     for c in crashes:
-        blob = " ".join(str(c.get(k) or "") for k in ("comm", "exe", "sig", "context"))
-        vendor = classify.vendor_for(blob)
+        vendor = classify.vendor_for_crash(
+            c.get("comm") or "", c.get("exe") or "",
+            c.get("sig") or "", c.get("context") or "",
+        )
         if c.get("faultcore_involved") == 1 and vendor == "local":
             vendor = "hardware"
         sig = f"{c.get('comm') or c.get('exe')} {c.get('sig')}"
@@ -459,9 +536,11 @@ def _mentions_faultcore(issue: dict) -> bool:
         return True
     if issue.get("kind") == "correlation":
         return True
-    if issue.get("vendor") in ("mozilla", "canonical-kernel", "hardware"):
+    if issue.get("vendor") in ("canonical-kernel", "hardware"):
         return True
-    return any(row.get("faultcore_involved") is not None for row in issue.get("rows") or [])
+    # Same-process affinity is the only evidence that names the fault core.
+    # A shared SpiderMonkey or GTK library is not a CPU correlation.
+    return any(row.get("faultcore_involved") == 1 for row in issue.get("rows") or [])
 
 
 def _faultcore_table(rows: list[dict], topology: dict | None = None) -> list[str]:
@@ -499,27 +578,98 @@ def _faultcore_table(rows: list[dict], topology: dict | None = None) -> list[str
     return lines
 
 
+def _crash_evidence(issue: dict) -> tuple[str, dict | None]:
+    """Stack-forward digest of the crash context and its faulting frame."""
+    context = _issue_context(issue)
+    if not context:
+        for row in issue.get("rows") or []:
+            message = str(row.get("message") or "")
+            if message:
+                return message[:3000], None
+        return "", None
+    return crash.digest(context), crash.faulting_frame(context)
+
+
+def _fault_bullets(issue: dict, fault: dict | None) -> list[str]:
+    """Name the frame that faulted, past the process's signal handler."""
+    if not fault:
+        return []
+    module = str(fault.get("module") or "")
+    offset = str(fault.get("offset") or "")
+    where = ""
+    if module and module != "n/a":
+        where = f" ({module}{' + ' + offset if offset else ''})"
+    symbol = fault.get("symbol") or "n/a"
+    lines = [f"- Faulting frame: `#{fault.get('index')} {symbol}{where}`"]
+    if fault.get("handler"):
+        last = max(int(fault.get("handler_frames") or 1) - 1, 0)
+        lines.append(
+            f"- Frames #0–#{last} are the process signal handler re-raising the "
+            "signal; the fault starts at the frame above.")
+    if fault.get("nearest"):
+        lines.append(
+            "- A `+ 0x…` offset is the nearest exported symbol, not a debug-resolved "
+            "frame; install the build-id debug package before drawing conclusions.")
+    if not fault.get("symbol"):
+        target = module if module and module != "n/a" else "the faulting module"
+        lines.append(
+            f"- The faulting frame has no symbol; install the build-id debug package "
+            f"for `{target}` to identify it.")
+    modules = crash.crash_thread_modules(_issue_context(issue))
+    if modules:
+        lines.append("- Crash-thread modules: " + ", ".join(
+            f"`{name}`" for name in modules))
+    return lines
+
+
+def _routing_bullets(issue: dict, component: str,
+                     fault: dict | None) -> list[str]:
+    if issue.get("kind") != "crash":
+        return []
+    rows = issue.get("rows") or []
+    row = next((r for r in rows if r.get("context")), rows[0] if rows else {})
+    notes = classify.routing_notes(
+        str(row.get("comm") or ""), str(row.get("exe") or ""),
+        str(row.get("sig") or ""), str(row.get("context") or ""),
+        str(issue.get("vendor") or ""),
+    )
+    if fault and fault.get("module") not in (None, "", "n/a"):
+        notes.append(
+            f"Component rule: faulting module `{fault['module']}` → **{component}**.")
+    return [f"- {note}" for note in notes]
+
+
 def _draft(issue: dict, bundle: dict | None, identity: dict, consent: bool) -> tuple[str, str]:
     meta = classify.VENDOR_META.get(issue["vendor"], classify.VENDOR_META["local"])
+    component = classify.component_for_issue(issue)
     topo = faultcore.topology()
     software = _software_versions(issue)
     shown = issue.get("display") or issue["signature"]
-    title = f"[QA] {meta['component']}: {shown[:120]}"
+    title = f"[QA] {component}: {shown[:120]}"
     version_tag = _version_tag(issue, software)
     if version_tag:
         title = f"{title} {version_tag}"
     if _mentions_faultcore(issue):
         title = f"{title} [{faultcore.theme_tag(topo)}]"
     rows = issue["rows"]
-    example = ""
-    if rows:
-        example = rows[0].get("message") or rows[0].get("context") or ""
+    if issue.get("kind") == "crash":
+        example, fault = _crash_evidence(issue)
+    else:
+        example = ""
+        fault = None
+        if rows:
+            example = redact(str(rows[0].get("message") or rows[0].get("context") or ""))[:3000]
 
+    faultcore_guard = (
+        "Remove nothing from the fault-core evidence section."
+        if _mentions_faultcore(issue)
+        else "Remove nothing from the evidence sections."
+    )
     lines = [
         f"# {title}",
         "",
         "> **DRAFT ONLY — NOT SUBMITTED.** Review, attach the evidence bundle, then post",
-        f"> through {meta['channel']}. Remove nothing from the fault-core evidence section.",
+        f"> through {meta['channel']}. {faultcore_guard}",
         "",
         f"- Vendor / channel: **{meta['name']}** — {meta['channel']}",
         f"- Cluster key: `{issue['key']}`",
@@ -555,20 +705,37 @@ def _draft(issue: dict, bundle: dict | None, identity: dict, consent: bool) -> t
                 lines.append("- Related packages are held but current.")
             lines.append("")
     version_note = _version_note(issue, software)
+    if issue["kind"] == "crash" and issue["count"] > 1:
+        summary = (
+            f"A recurring crash cluster ({issue['count']} occurrences) was "
+            "observed by the local QA sentinel:"
+        )
+    elif issue["kind"] == "crash":
+        summary = "A crash was observed by the local QA sentinel:"
+    else:
+        summary = (
+            f"A recurring {issue['kind']} cluster was observed by the local QA sentinel:"
+        )
     lines += [
         "## What happens",
         "",
-        f"A recurring {issue['kind']} cluster was observed by the local QA sentinel:",
+        summary,
         "",
     ]
     if version_note:
         lines += [version_note, ""]
     lines += [
         "```",
-        redact(example)[:3000] or "(no message captured)",
+        redact(example)[:4000] or "(no message captured)",
         "```",
         "",
     ]
+    fault_lines = _fault_bullets(issue, fault)
+    if fault_lines:
+        lines += [*fault_lines, ""]
+    routing = _routing_bullets(issue, component, fault)
+    if routing:
+        lines += ["## Classification", "", *routing, ""]
     if issue.get("notes"):
         lines += ["## Consistency", "", issue["notes"], ""]
     if topo.get("state") not in ("retired", "offline"):
@@ -581,7 +748,7 @@ def _draft(issue: dict, bundle: dict | None, identity: dict, consent: bool) -> t
     lines += [
         "## Reproduction",
         "",
-        *_repro_block(issue["vendor"], topo),
+        *_repro_block(issue["vendor"], topo, issue),
         "",
         f"Reproduction viability: {_reproduction_viability(topo, issue['vendor'])}",
         "",

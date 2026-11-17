@@ -72,6 +72,13 @@ def read_text(path, default: str = "") -> str:
 _HOSTNAME = socket.gethostname()
 _USER = os.environ.get("USER") or os.environ.get("LOGNAME") or "user"
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+# systemd unit templates and instance names look like e-mail addresses:
+# ``org.gnome.Shell@x11.service``, ``user@1000.service``. Their suffix is the
+# discriminator; a real address does not end in a unit type.
+_UNIT_SUFFIX_RE = re.compile(
+    r"@[A-Za-z0-9_.-]*\.(?:service|scope|slice|socket|target|mount|automount|"
+    r"path|timer|device|swap)$"
+)
 _MAC_RE = re.compile(r"\b(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}\b")
 _UUID_RE = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 _CRASH_ID_RE = re.compile(r"\bbp-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
@@ -85,12 +92,26 @@ _SERIAL_RE = re.compile(r"(?i)\b(serial(?:\s*(?:number|no\.?))?\s*[:=]\s*)\S+")
 def _ipv6_sub(match: re.Match) -> str:
     candidate = match.group(0)
     address = candidate.split("%", 1)[0]
+    # ``::`` alone parses as the unspecified IPv6 address, but in C++ and
+    # component names it is prose ("Core :: Graphics", "ns :: detail"). Keep
+    # it unless there is at least one hexadecimal digit to identify an address.
+    if not re.search(r"[0-9A-Fa-f]", address):
+        return candidate
     try:
         if ipaddress.ip_address(address).version == 6:
             return "<ip>"
     except ValueError:
         pass
     return candidate
+
+
+def _email_sub(match: re.Match) -> str:
+    candidate = match.group(0)
+    # Unit instance names are not operator identity and are useful evidence:
+    # ``org.gnome.Shell@x11.service`` names the crashed session.
+    if _UNIT_SUFFIX_RE.search(candidate):
+        return candidate
+    return "<email>"
 
 
 def redact(text: str) -> str:
@@ -105,7 +126,7 @@ def redact(text: str) -> str:
     text = text.replace(os.path.expanduser("~"), "/home/<user>")
     if _HOSTNAME and _HOSTNAME not in ("localhost",):
         text = text.replace(_HOSTNAME, "<host>")
-    text = _EMAIL_RE.sub("<email>", text)
+    text = _EMAIL_RE.sub(_email_sub, text)
     text = _MAC_RE.sub("<mac>", text)
     # A submitted Mozilla crash ID is a public report locator, not operator
     # identity. Preserve it so the ticket can be matched to the report; all

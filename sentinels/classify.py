@@ -1,7 +1,25 @@
-"""Severity and vendor classification, kept in one testable place."""
+"""Severity and vendor classification, kept in one testable place.
+
+Attribution has three explicit stages, in order:
+
+1. **Faulting driver module** — a frame inside a proprietary driver is the
+   driver vendor's defect, whatever process happened to load it.
+2. **Process anchor** — the crashing executable owns its bug. Shared libraries
+   do not: GNOME Shell embeds SpiderMonkey (``libmozjs``), so every gjs stack
+   contains ``mozilla::`` symbols, and Firefox embeds GTK, so every Firefox
+   stack contains ``g_object_unref``. Matching owners on those symbols files
+   GNOME crashes against Mozilla and Firefox crashes against GNOME.
+3. **Content rules** — only for processes that are not a known component.
+
+The component label follows the faulting frame, not the embedding process:
+``libmutter`` means mutter, ``libgjs`` means gjs, and a Firefox process with
+WebRender frames means ``Core :: Graphics: WebRender``.
+"""
 from __future__ import annotations
 
 import re
+
+from . import crash
 
 CRITICAL_PATTERNS = [
     r"\bpanic\b", r"\bkernel panic\b", r"\boops\b", r"\bBUG:", r"\bWARNING: CPU:",
@@ -109,23 +127,121 @@ def priority_to_severity(priority: int | None) -> str:
 
 
 VENDOR_RULES = [
+    # Mozilla is a browser owner, not the owner of every SpiderMonkey frame.
+    # ``mozilla::`` and ``libmozjs`` are deliberately absent: gjs embeds them.
+    # ``compositor`` is absent too: mutter calls its own compositor that.
     ("mozilla", re.compile(
-        r"firefox|mozilla|webrender|gecko|js::|gfx::|compositor|libxul|tab crash|content process",
+        r"firefox|webrender|\bgecko\b|libxul|tab crash|content process|"
+        r"\bgfx::|\bmozilla::(?:gfx|layers|dom|wr|WebRender)",
         re.IGNORECASE)),
     ("nvidia", re.compile(r"nvidia|nvrm|\bXid\b|nouveau|gpu has fallen", re.IGNORECASE)),
     ("canonical-kernel", re.compile(
         r"kernel|oops|panic|BUG:|mce|machine check|edac|nvme|ata[0-9]|ext4|xfs|"
         r"i915|amdgpu|soft lockup|hung task|oom", re.IGNORECASE)),
-    ("gnome", re.compile(r"gnome-shell|mutter|gdm|tracker|evolution", re.IGNORECASE)),
+    ("gnome", re.compile(
+        r"gnome-shell|mutter|gdm|tracker|evolution|org\.gnome\.",
+        re.IGNORECASE)),
     ("netplan", re.compile(r"netplan", re.IGNORECASE)),
     ("systemd", re.compile(r"systemd|journald|udev|logind|dbus", re.IGNORECASE)),
 ]
+
+# The crashing process decides ownership. Names are matched against the
+# executable basename and the (possibly 15-character-truncated) ``comm``.
+PROCESS_VENDOR_RULES = [
+    ("gnome", re.compile(
+        r"^(?:gnome-shell|gnome-terminal|gnome-software|gnome-control-center|"
+        r"gnome-session|gnome-keyring-daemon|nautilus|gjs|mutter|gdm|gdm3|"
+        r"evolution|tracker|epiphany)(?:$|-)")),
+    ("mozilla", re.compile(r"^(?:firefox|firefox-bin|firefox-esr|crashhelper)$")),
+    ("systemd", re.compile(
+        r"^(?:systemd|systemd-journald|systemd-logind|systemd-udevd|"
+        r"systemd-coredump|journalctl|dbus-daemon|dbus-broker)$")),
+]
+
+# A fault inside these modules is the driver vendor's problem, even when the
+# process is owned by someone else. Only the *faulting* frame counts; the
+# module list of a core contains every library the process ever loaded.
+DRIVER_MODULE_RULES = [
+    ("nvidia", re.compile(
+        r"(?:^|/)(?:libnvidia[-_a-z0-9]*|libGLX_nvidia|libEGL_nvidia|"
+        r"libcuda|nvidia|nvrm)(?:\.so.*)?$", re.IGNORECASE)),
+]
+
+# Component inference is evidence-first and must never return an empty or
+# "unknown" label. The steps are: faulting module project, crashing process,
+# event unit, finding rule/subject, then a descriptive last resort.
+MODULE_COMPONENTS = (
+    (re.compile(r"(?:^|/)libmutter(?:[-.]|$)", re.IGNORECASE), "mutter"),
+    (re.compile(r"(?:^|/)libgjs(?:[.-]|$)", re.IGNORECASE), "gjs"),
+    # SpiderMonkey inside GJS belongs to the JS bindings, not to Firefox.
+    (re.compile(r"(?:^|/)libmozjs(?:[-.]|$)", re.IGNORECASE), "gjs"),
+    (re.compile(r"(?:^|/)libcairo(?:[.-]|$)", re.IGNORECASE), "cairo"),
+    (re.compile(r"(?:^|/)libgtk-[34](?:[.-]|$)", re.IGNORECASE), "gtk"),
+    (re.compile(r"(?:^|/)libx11(?:[.-]|$)", re.IGNORECASE), "xorg-server"),
+    (re.compile(r"(?:^|/)libnvidia[-_a-z0-9]*", re.IGNORECASE), "NVIDIA driver"),
+    (re.compile(r"(?:^|/)libxul(?:[.-]|$)", re.IGNORECASE), "Firefox"),
+)
+
+# Firefox child processes carry a role name, not the browser name.
+FIREFOX_PROCESS_COMPONENTS = {
+    "isolated web co": "firefox",
+    "web content": "firefox",
+    "webextensions": "firefox",
+    "gpu process": "firefox",
+    "rdd process": "firefox",
+    "socket thread": "firefox",
+    "geckomain": "firefox",
+    "crashhelper": "firefox",
+}
+
+# Finding subjects that name a scope (a UID, a boot, a session) rather than a
+# component; the rule prefix is the component in those cases.
+_GENERIC_SUBJECTS = re.compile(
+    r"^(?:user@|user$|session-|boot$|init$|io$|irq$|pstore$|lockdown$|"
+    r"faultlab|unknown$|n/a$)",
+    re.IGNORECASE,
+)
+
+# Component labels, most specific first. The process table is consulted after
+# the faulting module and before the text table: a crash in gnome-terminal is
+# not a gnome-shell crash just because both load libgjs in other paths.
+GNOME_PROCESS_COMPONENTS = (
+    ("gnome-terminal", "gnome-terminal"),
+    ("gnome-software", "gnome-software"),
+    ("gnome-control-center", "gnome-control-center"),
+    ("nautilus", "nautilus"),
+    ("gnome-shell", "gnome-shell"),
+    ("mutter", "mutter"),
+    ("gjs", "gjs"),
+    ("tracker", "tracker-miners"),
+    ("evolution", "evolution-data-server"),
+    ("gdm", "gdm"),
+)
+
+GNOME_TEXT_COMPONENTS = (
+    ("libmutter", "mutter"),
+    ("mutter", "mutter"),
+    ("gnome-shell", "gnome-shell"),
+    ("libgjs", "gjs"),
+    ("gjs", "gjs"),
+    ("tracker", "tracker-miners"),
+    ("evolution", "evolution-data-server"),
+    ("nautilus", "nautilus"),
+)
+
+MOZILLA_COMPONENT_RULES = (
+    (re.compile(r"webrender", re.IGNORECASE), "Core :: Graphics: WebRender"),
+    (re.compile(r"\bgfx::|gpu process", re.IGNORECASE), "Core :: Graphics"),
+    (re.compile(r"\bjs::|JS_GC|spidermonkey", re.IGNORECASE),
+     "Core :: JavaScript Engine"),
+)
+MOZILLA_DEFAULT_COMPONENT = "Firefox :: Untriaged"
 
 VENDOR_META = {
     "mozilla": {
         "name": "Mozilla",
         "channel": "Bugzilla (https://bugzilla.mozilla.org)",
-        "component": "Core :: Graphics: WebRender",
+        "component": "Firefox :: Untriaged",
     },
     "nvidia": {
         "name": "NVIDIA",
@@ -140,7 +256,7 @@ VENDOR_META = {
     "gnome": {
         "name": "GNOME",
         "channel": "GNOME GitLab (https://gitlab.gnome.org)",
-        "component": "mutter / gnome-shell",
+        "component": "gnome-shell",
     },
     "netplan": {
         "name": "netplan.io",
@@ -166,12 +282,272 @@ VENDOR_META = {
 
 
 def vendor_for(*texts: str) -> str:
-    """Pick the most specific owner for a cluster of evidence."""
+    """Pick the most specific owner for a cluster of evidence.
+
+    Content-only fallback. Crashes should use :func:`vendor_for_crash`, which
+    anchors on the process and its faulting module first.
+    """
     blob = "\n".join(t for t in texts if t)
     for name, pattern in VENDOR_RULES:
         if pattern.search(blob):
             return name
     return "local"
+
+
+def _process_candidates(comm: str = "", exe: str = "") -> list[str]:
+    names: list[str] = []
+    base = str(exe or "").strip().rstrip("/").rsplit("/", 1)[-1].lower()
+    if base:
+        names.append(base)
+    process = str(comm or "").strip().lower()
+    if process:
+        names.append(process)
+        # systemd-coredump truncates comm to 15 characters and leaves a
+        # trailing dash ("gnome-terminal-").
+        if process.endswith("-"):
+            names.append(process.rstrip("-"))
+    return names
+
+
+def process_vendor(comm: str = "", exe: str = "") -> str | None:
+    """Owner of the crashing process, or ``None`` when it is not a component."""
+    for name in _process_candidates(comm, exe):
+        for vendor, pattern in PROCESS_VENDOR_RULES:
+            if pattern.search(name):
+                return vendor
+    return None
+
+
+def module_vendor(module: str = "") -> str | None:
+    """Owner of the faulting module when it is a proprietary driver."""
+    value = str(module or "").strip()
+    if not value:
+        return None
+    for vendor, pattern in DRIVER_MODULE_RULES:
+        if pattern.search(value):
+            return vendor
+    return None
+
+
+def vendor_for_crash(comm: str = "", exe: str = "", sig: str = "",
+                     context: str = "") -> str:
+    """Route a crash by faulting module, process, then the crash header.
+
+    The module dump is never content evidence: it lists every library the
+    process loaded, not the one that faulted. Reading it filed Python crashes
+    against systemd (``libsystemd``), Electron against systemd (``libdbus``)
+    and opencode against NVIDIA (``libnvidia``).
+    """
+    frame = crash.faulting_frame(context or "")
+    module = str((frame or {}).get("module") or "")
+    driver = module_vendor(module)
+    if driver:
+        return driver
+    owner = process_vendor(comm, exe)
+    if owner:
+        return owner
+    evidence: list[str] = [comm, exe, sig, crash.identity_text(context or "")]
+    if frame:
+        evidence += [module, str(frame.get("symbol") or "")]
+    return vendor_for(*evidence)
+
+
+def _clean_component(value: str) -> str:
+    text = str(value or "").strip().lower()
+    text = text.replace("\\x2d", "-")
+    text = text.rstrip("-")
+    if text.startswith("app-"):
+        text = text[4:]
+    return text
+
+
+def _process_name(comm: str = "", exe: str = "") -> str:
+    base = _clean_component(str(exe or "").strip().rstrip("/").rsplit("/", 1)[-1])
+    process = _clean_component(comm)
+    # ``python3`` + ``/usr/bin/python3.10``: the executable is the precise name.
+    if process and base and base.startswith(process) and len(base) > len(process):
+        return base
+    return process or base
+
+
+def module_component(module: str = "") -> str:
+    """Project named by the faulting module, or an empty string."""
+    value = str(module or "")
+    if not value or value == "n/a":
+        return ""
+    for pattern, component in MODULE_COMPONENTS:
+        if pattern.search(value):
+            return component
+    return ""
+
+
+def _unit_component(unit: str = "") -> str:
+    value = _clean_component(unit)
+    if not value:
+        return ""
+    value = value.split("@", 1)[0]
+    for suffix in (".service", ".scope", ".slice", ".socket", ".target",
+                   ".mount", ".automount", ".path", ".timer", ".device",
+                   ".swap"):
+        if value.endswith(suffix):
+            value = value[: -len(suffix)]
+            break
+    return value.rstrip("-")
+
+
+def _subject_component(rule: str = "", subject: str = "") -> str:
+    value = _clean_component(subject)
+    if value.startswith("ident:"):
+        value = value.split(":", 1)[1].strip()
+    value = re.sub(r"\[\d+\]$", "", value)
+    if "@" in value or value.endswith((".service", ".scope", ".slice", ".socket")):
+        unit = _unit_component(value)
+        if unit and not _GENERIC_SUBJECTS.search(unit):
+            return unit
+    if value in FIREFOX_PROCESS_COMPONENTS:
+        return FIREFOX_PROCESS_COMPONENTS[value]
+    if value and not _GENERIC_SUBJECTS.search(value):
+        return value
+    return _clean_component(re.split(r"[.:]", str(rule or ""), maxsplit=1)[0])
+
+
+def _evidence_component(module: str = "", comm: str = "", exe: str = "",
+                        unit: str = "", rule: str = "", subject: str = "") -> str:
+    """Evidence-only component: module, process, unit, rule, then unassigned."""
+    component = module_component(module)
+    if component:
+        return component
+    name = _process_name(comm, exe)
+    if name in FIREFOX_PROCESS_COMPONENTS:
+        return FIREFOX_PROCESS_COMPONENTS[name]
+    if name and name not in ("n/a", "unknown"):
+        return name
+    component = _unit_component(unit)
+    if component and not _GENERIC_SUBJECTS.search(component):
+        return component
+    component = _subject_component(rule, subject)
+    if component:
+        return component
+    return "unassigned"
+
+
+def component_for(vendor: str, text: str = "", fault_module: str = "",
+                  comm: str = "", exe: str = "", unit: str = "",
+                  rule: str = "", subject: str = "") -> str:
+    """Component label for a ticket title, derived from the evidence.
+
+    Total by construction: every branch returns a label, and ``unassigned`` is
+    the last resort instead of the old ``unknown``. Evidence wins for GNOME,
+    systemd and local issues. Structured trackers (Mozilla, NVIDIA, kernel,
+    netplan, hardware) keep a real tracker component: a wrong route there is a
+    routing bug to fix, not a component label to invent.
+    """
+    blob = str(text or "")
+    name = _process_name(comm, exe)
+    module_name = module_component(fault_module)
+    if vendor == "mozilla":
+        for pattern, component in MOZILLA_COMPONENT_RULES:
+            if pattern.search(blob):
+                return component
+        if module_name in ("gtk", "xorg-server"):
+            return "Core :: Widget: Gtk"
+        if module_name == "cairo":
+            return "Core :: Graphics"
+        return MOZILLA_DEFAULT_COMPONENT
+    if vendor == "gnome":
+        if module_name in ("mutter", "gjs"):
+            return module_name
+        for token, component in GNOME_PROCESS_COMPONENTS:
+            if token in name:
+                return component
+        if module_name in ("cairo", "gtk"):
+            return module_name
+        lowered = blob.lower()
+        for token, component in GNOME_TEXT_COMPONENTS:
+            if token in lowered:
+                return component
+        return "gnome-shell"
+    if vendor in ("nvidia", "canonical-kernel", "netplan", "hardware"):
+        return VENDOR_META[vendor]["component"]
+    # local, systemd and any future free-form owner: evidence first.
+    return _evidence_component(
+        fault_module, comm, exe, unit, rule, subject)
+
+
+def component_for_issue(issue: dict) -> str:
+    """Component for an issue dict, using its first resolvable fault frame."""
+    rows = issue.get("rows") or []
+    texts: list[str] = []
+    fault_module = ""
+    comm = ""
+    exe = ""
+    unit = ""
+    rule = ""
+    subject = ""
+    for row in rows:
+        if not comm:
+            comm = str(row.get("comm") or "")
+            exe = str(row.get("exe") or "")
+        if not unit:
+            unit = str(row.get("unit") or "")
+        if not rule:
+            rule = str(row.get("rule") or "")
+            subject = str(row.get("subject") or "")
+        texts.append(" ".join(
+            str(row.get(key) or "") for key in ("comm", "exe", "sig", "context", "message")
+        ))
+        if not fault_module:
+            frame = crash.faulting_frame(str(row.get("context") or ""))
+            if frame and frame.get("module") not in ("", "n/a"):
+                fault_module = str(frame["module"])
+    return component_for(
+        str(issue.get("vendor") or ""), "\n".join(texts), fault_module,
+        comm, exe, unit, rule, subject)
+
+
+def routing_notes(comm: str = "", exe: str = "", sig: str = "",
+                  context: str = "", vendor: str = "") -> list[str]:
+    """Why this crash went to this owner, in reviewable bullets."""
+    blob = " ".join(str(part or "") for part in (comm, exe, sig, context))
+    frame = crash.faulting_frame(context or "")
+    evidence = " ".join(str(part or "") for part in (
+        comm, exe, sig, crash.identity_text(context or ""),
+        (frame or {}).get("module") or "", (frame or {}).get("symbol") or "",
+    ))
+    notes: list[str] = []
+    owner = process_vendor(comm, exe)
+    if owner:
+        meta = VENDOR_META.get(owner, VENDOR_META["local"])
+        notes.append(
+            f"Owner rule: crashing process `{comm or exe or 'unknown'}` is a "
+            f"{meta['name']} component (process anchor)."
+        )
+    else:
+        for name, pattern in VENDOR_RULES:
+            match = pattern.search(evidence)
+            if match:
+                notes.append(
+                    f"Owner rule: no known process anchor; content matched "
+                    f"`{name}` on `{match.group(0)[:60]}` (header and faulting "
+                    "frame only)."
+                )
+                break
+        else:
+            notes.append(
+                "Owner rule: no process anchor and no header/frame match; "
+                "kept in local triage."
+            )
+    if vendor != "mozilla" and re.search(r"libmozjs|mozilla::", blob):
+        notes.append(
+            "Ignored for ownership: `libmozjs`/`mozilla::` is SpiderMonkey, "
+            "the JS engine GJS embeds, not Firefox."
+        )
+    if vendor == "gnome" and re.search(r"webkit|chrome|electron", blob, re.IGNORECASE):
+        notes.append(
+            "Ignored for ownership: embedded web engines are libraries, not "
+            "the crashing desktop component."
+        )
+    return notes
 
 
 def vendor_for_finding(rule: str, subject: str = "", detail: str = "") -> str:
