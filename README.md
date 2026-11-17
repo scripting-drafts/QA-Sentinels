@@ -43,7 +43,7 @@ first use, `/usr/bin/qa` creates `~/QA-Sentinels` unless a checkout already
 exists. It does not overwrite an existing checkout.
 
 ```bash
-sudo add-apt-repository ppa:toomanypatterns/ubuntu-backup
+sudo add-apt-repository ppa:toomanypatterns/qa-sentinels
 sudo apt update
 sudo apt install qa-sentinels
 qa status
@@ -51,9 +51,12 @@ qa status
 
 QA Sentinels is standalone and does not require the GUI. The optional
 `qa-dashboard` package is an Electron front end and Recommends
-`qa-sentinels`; install it separately with:
+`qa-sentinels`; it is published from `ppa:toomanypatterns/qa-dashboard` and
+installed separately with:
 
 ```bash
+sudo add-apt-repository ppa:toomanypatterns/qa-dashboard
+sudo apt update
 sudo apt install qa-dashboard
 ```
 
