@@ -15,8 +15,9 @@ from datetime import datetime
 
 from . import (
     boot, compat, config, correlate, crosscheck, db, deep, detect, evidence, faultcore,
-    hardware, holds, ingest, inventory, legal, logs, lsm, network, notify, posture,
-    query, raise_ticket, report, sampler, security, shutdown, tickets, trace, triage,
+    hardware, holds, ingest, inventory, legal, logs, lsm, network, notify,
+    platform as platform_mod, platform_cycle, posture, query, raise_ticket,
+    report, sampler, security, shutdown, tickets, trace, triage,
 )
 from .util import fmt_duration, iso, parse_iso, read_text, run, sha256_file, utcnow
 
@@ -43,6 +44,19 @@ def _cron_block() -> str:
 def cmd_init(args) -> int:
     config.ensure_dirs()
     db.init()
+    if not sys.platform.startswith("linux"):
+        backend = platform_mod.detect()
+        print(f"root      : {config.ROOT}")
+        print(f"database  : {config.DB_PATH}")
+        print(f"platform  : {backend.display} ({backend.name})")
+        print(f"python    : {sys.version.split()[0]}")
+        supported = sum(
+            1 for cap in backend.capabilities().values()
+            if cap.status == "supported"
+        )
+        print(f"capabilities: {supported} supported")
+        print("next      : qa platform --collect; qa cycle")
+        return 0
     rc, out, err = run([str(config.SAMPLE_BIN)], timeout=30)
     ok = rc == 0 and out.strip().startswith("{")
     print(f"root      : {config.ROOT}")
@@ -671,7 +685,36 @@ def cmd_posture(args) -> int:
     return 0 if data["verdict"] == "unprivileged" and not data["baseline_changed"] else 1
 
 
+def _platform_status(conn) -> None:
+    backend = platform_mod.detect()
+    row = conn.execute(
+        "SELECT ts, platform, host, payload FROM platform_snapshots "
+        "ORDER BY ts DESC, id DESC LIMIT 1"
+    ).fetchone()
+    caps = backend.capabilities()
+    supported = sum(1 for cap in caps.values() if cap.status == "supported")
+    planned = sum(1 for cap in caps.values() if cap.status == "planned")
+    print(f"{config.PROJECT_NAME} status")
+    print(f"  platform      : {backend.display} ({backend.name})")
+    print(f"  last snapshot : {row['ts'] if row else 'never'}")
+    print(f"  capabilities  : {supported} supported, {planned} planned")
+    if row:
+        payload = json.loads(row["payload"])
+        data = payload.get("data") or {}
+        processes = data.get("processes")
+        print(f"  processes     : {len(processes) if isinstance(processes, list) else 'collected'}")
+        errors = payload.get("errors") or []
+        print(f"  collector errs: {len(errors)}")
+        for error in errors[:5]:
+            print(f"    - {error}")
+    print(f"  database      : {config.DB_PATH}")
+
+
 def cmd_status(args) -> int:
+    if not sys.platform.startswith("linux"):
+        with db.session() as conn:
+            _platform_status(conn)
+        return 0
     with db.session() as conn:
         def scalar(sql, args=()):
             return conn.execute(sql, args).fetchone()[0]
@@ -805,6 +848,41 @@ def cmd_legal(args) -> int:
     return 0
 
 
+def cmd_platform(args) -> int:
+    backend = platform_mod.detect()
+    if args.collect:
+        data = backend.collect().as_dict()
+    else:
+        data = {
+            "platform": backend.name,
+            "family": backend.family,
+            "host": backend.host_info(),
+            "capabilities": {
+                key: value.as_dict()
+                for key, value in backend.capabilities().items()
+            },
+            "findings": platform_mod.matrix(),
+            "coverage": platform_mod.coverage(),
+        }
+    if args.json:
+        print(json.dumps(data, indent=2, sort_keys=True))
+        return 0
+    print(f"{backend.display} ({backend.name})")
+    for key, value in data["host"].items():
+        print(f"  {key:<12}: {value}")
+    print("capabilities")
+    for area, capability in data["capabilities"].items():
+        detail = f" — {capability['detail']}" if capability.get("detail") else ""
+        print(f"  {area:<12}: {capability['status']:<16} {capability['source']}{detail}")
+    print("findings")
+    for family in data["findings"]:
+        print(
+            f"  {family['prefix']:<12} linux={family['linux']:<18} "
+            f"windows={family['windows']:<28} macos={family['macos']}"
+        )
+    return 0
+
+
 def cmd_compat(args) -> int:
     data = compat.report()
     print(json.dumps(data, indent=2, sort_keys=True))
@@ -812,6 +890,14 @@ def cmd_compat(args) -> int:
 
 
 def cmd_preflight(args) -> int:
+    if not sys.platform.startswith("linux"):
+        backend = platform_mod.detect()
+        caps = backend.capabilities()
+        for area, cap in caps.items():
+            print(f"[{cap.status:<15}] {area}: {cap.source}")
+        print(f"[info] platform: {backend.display} ({backend.name})")
+        print("[info] Linux-only layer-2, eBPF and journal checks are not run here.")
+        return 0
     checks = []
     rc, out, err = run([str(config.SAMPLE_BIN)], timeout=30)
     checks.append(("C sampler", rc == 0 and out.startswith("{"), (err or "")[:120]))
@@ -1072,6 +1158,11 @@ def _cycle_mark(conn, key: str) -> None:
 
 def cmd_cycle(args) -> int:
     config.ensure_dirs()
+    if not sys.platform.startswith("linux"):
+        with db.session() as conn:
+            result = platform_cycle.run(conn)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
     result: dict = {"ts": iso()}
     findings_dirty = False
     failed = 0
@@ -1714,6 +1805,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="exit non-zero on missing artifacts or version drift",
     )
     s.set_defaults(func=cmd_legal)
+
+    s = sub.add_parser(
+        "platform",
+        help="report platform, capability and finding-family equivalence",
+    )
+    s.add_argument("--json", action="store_true", help="emit JSON")
+    s.add_argument(
+        "--collect", action="store_true",
+        help="collect a read-only platform snapshot",
+    )
+    s.set_defaults(func=cmd_platform)
 
     s = sub.add_parser("compat", help="report Ubuntu/Python/SQLite/systemd upgrade compatibility")
     s.add_argument("--strict", action="store_true", help="exit non-zero outside the documented baseline")

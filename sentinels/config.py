@@ -3,6 +3,7 @@ import json
 import os
 import pathlib
 import re
+import sys
 
 PROJECT_NAME = "QA Sentinels"
 PROJECT_SHORT = "QA Sentinels"
@@ -12,7 +13,14 @@ PROJECT_SLUG = "qa-sentinels"
 PROJECT_DIR = "QA-Sentinels"
 
 HOME = pathlib.Path(os.environ.get("HOME", pathlib.Path.home()))
-ROOT = pathlib.Path(os.environ.get("QA_SENTINELS_HOME", HOME / PROJECT_DIR)).resolve()
+if os.name == "nt":
+    _default_root = pathlib.Path(
+        os.environ.get("LOCALAPPDATA", pathlib.Path.home())) / PROJECT_DIR
+elif sys.platform == "darwin":
+    _default_root = pathlib.Path.home() / "Library" / "Application Support" / PROJECT_DIR
+else:
+    _default_root = HOME / PROJECT_DIR
+ROOT = pathlib.Path(os.environ.get("QA_SENTINELS_HOME", _default_root)).resolve()
 
 SETTINGS_FILE = ROOT / "config" / "settings.json"
 
@@ -104,7 +112,10 @@ def _optional_int(value: str | None) -> int | None:
 
 
 FAULTLAB_CONFIG = pathlib.Path(
-    os.environ.get("QA_FAULTLAB_CONFIG", "/etc/faultlab/config")
+    os.environ.get(
+        "QA_FAULTLAB_CONFIG",
+        "/etc/faultlab/config" if sys.platform.startswith("linux") else ROOT / "config" / "faultlab",
+    )
 )
 _FAULTLAB = _faultlab_values(FAULTLAB_CONFIG)
 
@@ -116,7 +127,10 @@ DB_PATH = VAR / "sentinels.db"
 # archive is root-owned; root/pstore-export.sh writes panic-only summaries to
 # PSTORE_EXPORT_DIR so the unprivileged sentinel can read them.
 PSTORE_ARCHIVE_DIR = pathlib.Path(
-    os.environ.get("QA_PSTORE_ARCHIVE_DIR", "/var/lib/systemd/pstore")
+    os.environ.get(
+        "QA_PSTORE_ARCHIVE_DIR",
+        "/var/lib/systemd/pstore" if sys.platform.startswith("linux") else VAR / "pstore-archive",
+    )
 )
 PSTORE_EXPORT_DIR = pathlib.Path(
     os.environ.get("QA_PSTORE_EXPORT_DIR", str(VAR / "pstore"))
@@ -146,7 +160,7 @@ DEEP_ARCHIVE_DIR = TRIAGE_DIR / "deep-requests" / "archive"
 CONFIG_DIR = ROOT / "config"
 IDENTITY_FILE = CONFIG_DIR / "identity.env"
 
-SAMPLE_BIN = BIN / "qa_sample"
+SAMPLE_BIN = BIN / ("qa_sample.exe" if os.name == "nt" else "qa_sample")
 
 INVENTORY_INTERVAL_S = int(os.environ.get("QA_INVENTORY_INTERVAL_S", str(3 * 3600)))
 INVENTORY_MIN_S = int(os.environ.get("QA_INVENTORY_MIN_S", "900"))
@@ -225,13 +239,28 @@ FAULT_CORE_ENFORCE = os.environ.get(
 if FAULT_CORE_ENFORCE not in ("auto", "lab", "retired", "off"):
     FAULT_CORE_ENFORCE = "auto"
 FAULT_CORE_MODE_FILE = pathlib.Path(os.environ.get(
-    "QA_FAULT_CORE_MODE_FILE", os.environ.get("QA_CORE2_MODE_FILE", "/etc/faultlab/mode")
+    "QA_FAULT_CORE_MODE_FILE",
+    os.environ.get(
+        "QA_CORE2_MODE_FILE",
+        "/etc/faultlab/mode" if sys.platform.startswith("linux")
+        else ROOT / "config" / "faultlab-mode",
+    ),
 ))
 FAULT_CORE_CPU_ROOT = pathlib.Path(os.environ.get(
-    "QA_FAULT_CORE_CPU_ROOT", os.environ.get("QA_CORE2_CPU_ROOT", "/sys/devices/system/cpu")
+    "QA_FAULT_CORE_CPU_ROOT",
+    os.environ.get(
+        "QA_CORE2_CPU_ROOT",
+        "/sys/devices/system/cpu" if sys.platform.startswith("linux")
+        else VAR / "faultcore-cpu",
+    ),
 ))
 FAULT_CORE_CGROUP_ROOT = pathlib.Path(os.environ.get(
-    "QA_FAULT_CORE_CGROUP_ROOT", os.environ.get("QA_CORE2_CGROUP_ROOT", "/sys/fs/cgroup")
+    "QA_FAULT_CORE_CGROUP_ROOT",
+    os.environ.get(
+        "QA_CORE2_CGROUP_ROOT",
+        "/sys/fs/cgroup" if sys.platform.startswith("linux")
+        else VAR / "faultcore-cgroup",
+    ),
 ))
 FAULT_CORE_AB_RESULTS = pathlib.Path(os.environ.get(
     "QA_FAULT_CORE_AB_RESULTS", os.environ.get("QA_CORE2_AB_RESULTS", "/var/log/faultlab/ab.jsonl")

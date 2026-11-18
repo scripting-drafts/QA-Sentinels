@@ -71,6 +71,14 @@ CATEGORIES: dict[str, dict[str, str]] = {
             "ORDER BY id DESC LIMIT {limit}"
         ),
     },
+    "platform": {
+        "label": "Platform snapshots",
+        "description": "Read-only Windows/macOS platform snapshots with capabilities.",
+        "sql": (
+            "SELECT id, ts, platform, host, payload FROM platform_snapshots "
+            "ORDER BY ts DESC, id DESC LIMIT {limit}"
+        ),
+    },
     "new-findings": {
         "label": "Cycle findings",
         "description": "Findings created by a cycle, linked back to the cycle time.",
@@ -302,6 +310,7 @@ CATEGORY_SOURCES = {
     "errors": "findings",
     "findings": "findings",
     "cycles": "runs",
+    "platform": "platform_snapshots",
     "new-findings": "cycle_findings",
     "events": "events",
     "crashes": "crashes",

@@ -10,6 +10,7 @@ import os
 import platform
 import re
 import sqlite3
+import sys
 from pathlib import Path
 
 from .util import read_text, run
@@ -94,6 +95,9 @@ def evaluate(os_id: str, os_version: str, python_version: str,
 
 
 def report() -> dict:
+    if not sys.platform.startswith("linux"):
+        from .platform import detect
+        return detect().compat_report()
     release = _os_release()
     data = evaluate(
         release.get("ID", ""),

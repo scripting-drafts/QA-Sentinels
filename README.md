@@ -127,6 +127,7 @@ make -C src install
 
 ```bash
 ./bin/qa status                 # Overall status
+./bin/qa platform --collect     # Host platform and read-only snapshot
 ./bin/qa network show          # Latest network/connectivity snapshot
 ./bin/qa logs --lines 50       # Recent sentinel activity
 ./bin/qa logs --follow         # Follow new log entries

@@ -19,6 +19,15 @@ CREATE TABLE IF NOT EXISTS samples (
     payload TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_samples_ts ON samples(ts);
+CREATE TABLE IF NOT EXISTS platform_snapshots (
+    id INTEGER PRIMARY KEY,
+    ts TEXT NOT NULL UNIQUE,
+    platform TEXT NOT NULL,
+    host TEXT,
+    payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_platform_snapshots_ts
+    ON platform_snapshots(ts);
 CREATE TABLE IF NOT EXISTS proc_snap (
     ts TEXT NOT NULL,
     pid INTEGER NOT NULL,
