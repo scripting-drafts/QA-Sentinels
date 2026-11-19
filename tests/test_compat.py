@@ -45,6 +45,8 @@ class CompatTests(unittest.TestCase):
             "ID": "ubuntu", "VERSION_ID": "22.04",
         }):
             self.assertFalse(compat.sysv_deprecated())
+            self.assertFalse(compat.ignore_sysv_failure(
+                "Failed to start LSB: OpenIPMI Driver init script."))
         compat.sysv_deprecated.cache_clear()
         with unittest.mock.patch.object(compat, "_os_release", return_value={
             "ID": "ubuntu", "VERSION_ID": "24.04",

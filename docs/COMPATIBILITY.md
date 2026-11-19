@@ -62,6 +62,9 @@ the documented minimums. `--strict` exits non-zero outside the baseline.
   `Failed to start LSB:` journal message is ignored on Ubuntu 24.04+ and the
   inventory records `sysv-failed/openipmi.service` instead of a systemd
   failure. IPMI is read through `ipmitool`; `openipmi` is not required.
+  **Ubuntu 22.04 (jammy) is the exception:** it still uses the SysV/openipmi
+  path, so LSB failures remain findings and inventory keeps
+  `failed/openipmi.service`.
 - **eBPF:** the tracer is kernel-specific. `qa deep` checks the build stamp and
   refuses a stale object; rebuild after every kernel change.
 - **LSM:** the root LSM helper is optional and reports unavailable securityfs

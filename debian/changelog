@@ -17,9 +17,10 @@ qa-sentinels (1.4.1) jammy; urgency=medium
   * Add tests for module-dump isolation, totality, finding/event labels and
     wrong-vendor independence; document the chain in `docs/TICKETS.md`.
   * Support systemd 259 alongside Noble's 255 on the 249+ baseline. On Ubuntu
-    24.04+, ignore deprecated SysV `LSB:` service
-    failures such as openipmi and record them as `sysv-failed/` in inventory;
-    IPMI continues to use `ipmitool` directly.
+    24.04+ (Noble/Resolute), ignore deprecated SysV `LSB:` service failures
+    such as openipmi and record them as `sysv-failed/` in inventory; IPMI
+    continues to use `ipmitool` directly. Jammy remains the exception and
+    keeps the SysV/openipmi path.
   * Match legal-register minimums numerically, so Noble's Python 3.12 and
     SQLite 3.45 satisfy `3.10+` and `3.37+` without warnings.
 
