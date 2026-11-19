@@ -18,6 +18,11 @@ or full PCIe/DRAM trace.
 | `uncore` | selected `perf` uncore PMU events | CAP_PERFMON |
 | `vendor` | configured firmware/BMC log files | file read access |
 
+IPMI is read directly with `ipmitool` (or Redfish when configured). The
+`openipmi` package is an LSB/SysV init script; the SysV generator is deprecated
+on Ubuntu 24.04+, so its startup failure is not treated as a systemd finding and
+appears as `sysv-failed/openipmi.service` in inventory. `openipmi` is optional.
+
 ## Commands
 
 ```bash

@@ -11,6 +11,7 @@ import platform
 import re
 import sqlite3
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 from .util import read_text, run
@@ -22,6 +23,8 @@ MIN_PYTHON = (3, 10)
 MIN_SQLITE = (3, 37)
 MIN_SYSTEMD = (249,)
 MIN_KERNEL = (5, 15)
+SYSV_DEPRECATED_UBUNTU = (24, 4)
+SYSV_FAILURE = re.compile(r"(?i)\bLSB:\s")
 
 
 def _version_tuple(value: str) -> tuple[int, ...] | None:
@@ -45,6 +48,22 @@ def _systemd_version() -> str:
     rc, out, err = run(["systemctl", "--version"], timeout=10)
     match = re.search(r"systemd\s+(\d+(?:\.\d+)*)", out or err)
     return match.group(1) if match else "unknown"
+
+
+@lru_cache(maxsize=1)
+def sysv_deprecated() -> bool:
+    """Ubuntu 24.04+ deprecates the SysV generator."""
+    release = _os_release()
+    version = _version_tuple(release.get("VERSION_ID", ""))
+    return (
+        release.get("ID", "").lower() == "ubuntu"
+        and bool(version and version >= SYSV_DEPRECATED_UBUNTU)
+    )
+
+
+def ignore_sysv_failure(message: str) -> bool:
+    """SysV LSB failures are noise on releases without the generator."""
+    return bool(SYSV_FAILURE.search(message or "")) and sysv_deprecated()
 
 
 def evaluate(os_id: str, os_version: str, python_version: str,
