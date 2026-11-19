@@ -23,7 +23,7 @@ MIN_PYTHON = (3, 10)
 MIN_SQLITE = (3, 37)
 MIN_SYSTEMD = (249,)
 MIN_KERNEL = (5, 15)
-SYSV_DEPRECATED_UBUNTU = (24, 4)
+SYSV_UNAVAILABLE_FROM = (250,)
 SYSV_FAILURE = re.compile(r"(?i)\bLSB:\s")
 
 
@@ -51,19 +51,20 @@ def _systemd_version() -> str:
 
 
 @lru_cache(maxsize=1)
-def sysv_deprecated() -> bool:
-    """Ubuntu 24.04+ deprecates the SysV generator."""
-    release = _os_release()
-    version = _version_tuple(release.get("VERSION_ID", ""))
-    return (
-        release.get("ID", "").lower() == "ubuntu"
-        and bool(version and version >= SYSV_DEPRECATED_UBUNTU)
-    )
+def sysv_available() -> bool:
+    """Whether the SysV generator is still expected on this systemd.
+
+    Jammy ships systemd 249 and is the only supported release that still uses
+    SysV. Later releases (250+) are assumed to have no generator, without
+    asking the operator for the Ubuntu release.
+    """
+    version = _version_tuple(_systemd_version())
+    return bool(version and version < SYSV_UNAVAILABLE_FROM)
 
 
 def ignore_sysv_failure(message: str) -> bool:
-    """SysV LSB failures are noise on releases without the generator."""
-    return bool(SYSV_FAILURE.search(message or "")) and sysv_deprecated()
+    """SysV LSB failures are noise wherever the generator is unavailable."""
+    return bool(SYSV_FAILURE.search(message or "")) and not sysv_available()
 
 
 def evaluate(os_id: str, os_version: str, python_version: str,

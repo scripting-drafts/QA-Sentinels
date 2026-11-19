@@ -354,8 +354,8 @@ class LayerTests(unittest.TestCase):
             " VALUES('native','2026-11-19T09:00:00Z','systemd.service_start',"
             "'init','Failed to start Network Manager Wait Online.','open')"
         )
-        with mock.patch.object(detect.compat, "sysv_deprecated",
-                               return_value=True):
+        with mock.patch.object(detect.compat, "sysv_available",
+                               return_value=False):
             self.assertEqual(detect.resolve_sysv_findings(conn), 1)
         rows = {row["fingerprint"]: row["status"] for row in conn.execute(
             "SELECT fingerprint,status FROM findings")}

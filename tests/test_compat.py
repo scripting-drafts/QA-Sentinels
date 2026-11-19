@@ -39,28 +39,20 @@ class CompatTests(unittest.TestCase):
             {"Python >= 3.10", "SQLite >= 3.37", "systemd >= 249", "kernel >= 5.15"},
         )
 
-    def test_sysv_deprecation_is_gated_to_noble_and_later(self):
-        compat.sysv_deprecated.cache_clear()
-        with unittest.mock.patch.object(compat, "_os_release", return_value={
-            "ID": "ubuntu", "VERSION_ID": "22.04",
-        }):
-            self.assertFalse(compat.sysv_deprecated())
+    def test_sysv_availability_tracks_systemd_not_the_release(self):
+        with unittest.mock.patch.object(compat, "_systemd_version",
+                                        return_value="249"):
+            compat.sysv_available.cache_clear()
+            self.assertTrue(compat.sysv_available())
             self.assertFalse(compat.ignore_sysv_failure(
                 "Failed to start LSB: OpenIPMI Driver init script."))
-        compat.sysv_deprecated.cache_clear()
-        with unittest.mock.patch.object(compat, "_os_release", return_value={
-            "ID": "ubuntu", "VERSION_ID": "24.04",
-        }):
-            self.assertTrue(compat.sysv_deprecated())
-        compat.sysv_deprecated.cache_clear()
-        with unittest.mock.patch.object(compat, "_os_release", return_value={
-            "ID": "ubuntu", "VERSION_ID": "26.04",
-        }):
-            self.assertTrue(compat.sysv_deprecated())
-        with unittest.mock.patch.object(compat, "sysv_deprecated",
-                                        return_value=True):
-            self.assertTrue(compat.ignore_sysv_failure(
-                "Failed to start LSB: OpenIPMI Driver init script."))
+        for version in ("250", "255", "259", "260"):
+            with unittest.mock.patch.object(compat, "_systemd_version",
+                                            return_value=version):
+                compat.sysv_available.cache_clear()
+                self.assertFalse(compat.sysv_available(), version)
+                self.assertTrue(compat.ignore_sysv_failure(
+                    "Failed to start LSB: OpenIPMI Driver init script."))
 
     def test_current_host_is_supported(self):
         self.assertTrue(compat.report()["supported"])

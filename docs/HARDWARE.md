@@ -19,9 +19,11 @@ or full PCIe/DRAM trace.
 | `vendor` | configured firmware/BMC log files | file read access |
 
 IPMI is read directly with `ipmitool` (or Redfish when configured). The
-`openipmi` package is an LSB/SysV init script; the SysV generator is deprecated
-on Ubuntu 24.04+, so its startup failure is not treated as a systemd finding and
-appears as `sysv-failed/openipmi.service` in inventory. `openipmi` is optional.
+`openipmi` package is an LSB/SysV init script. On systemd 250+ (all later
+releases including Noble, Resolute and Stonking) the generator is treated as
+unavailable, so its startup
+failure is not a systemd finding and appears as `sysv-failed/openipmi.service`
+in inventory. Jammy (systemd 249) keeps the legacy path. `openipmi` is optional.
 
 ## Commands
 

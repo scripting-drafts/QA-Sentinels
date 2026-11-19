@@ -58,13 +58,12 @@ the documented minimums. `--strict` exits non-zero outside the baseline.
   are tested. Newer versions remain supported by the 249+ baseline until a
   release-specific check is needed.
 - **SysV / openipmi:** `openipmi` is an LSB/SysV init script, not a native
-  systemd unit. The SysV generator is deprecated from Noble onward, so its
-  `Failed to start LSB:` journal message is ignored on Ubuntu 24.04+ and the
-  inventory records `sysv-failed/openipmi.service` instead of a systemd
-  failure. IPMI is read through `ipmitool`; `openipmi` is not required.
-  **Ubuntu 22.04 (jammy) is the exception:** it still uses the SysV/openipmi
-  path, so LSB failures remain findings and inventory keeps
-  `failed/openipmi.service`.
+  systemd unit. The cutoff is inferred from systemd itself, not from a release
+  version supplied at install time: systemd 249 (jammy) keeps the SysV/openipmi
+  path, while systemd 250+ (all later releases, including Noble, Resolute and
+  Stonking) assumes the generator is unavailable. On those systems, `Failed to start LSB:` is ignored and inventory
+  records `sysv-failed/openipmi.service` instead of a systemd failure. IPMI is
+  read through `ipmitool`; `openipmi` is not required.
 - **eBPF:** the tracer is kernel-specific. `qa deep` checks the build stamp and
   refuses a stale object; rebuild after every kernel change.
 - **LSM:** the root LSM helper is optional and reports unavailable securityfs

@@ -256,7 +256,7 @@ def _sample_findings(conn) -> list[dict]:
 
 def resolve_sysv_findings(conn) -> int:
     """Close open LSB failures when the SysV generator is deprecated."""
-    if not compat.sysv_deprecated():
+    if compat.sysv_available():
         return 0
     resolved = 0
     for row in conn.execute(
