@@ -66,6 +66,22 @@ NOISE_PATTERNS = [
     r"NVRM: loading NVIDIA",
 ]
 
+# rasdaemon reports tracepoint management as "<subsys>:<event> event enabled"
+# (or "Enabled event <subsys>:<event>").  The "mce:" prefix is a tracepoint
+# name, not a machine-check record, so these lines are control-plane noise.
+TRACEPOINT_CONTROL = re.compile(
+    r"(?i)^(?:rasdaemon(?:\[\d+\])?:\s*)?(?:"
+    r"(?:enabled|disabled) event [a-z0-9_]+:[a-z0-9_]+|"
+    r"[a-z0-9_]+:[a-z0-9_]+ event (?:enabled|disabled)"
+    r")\s*$"
+)
+
+
+def tracepoint_control(message: str) -> bool:
+    """True for rasdaemon's tracepoint enable/disable status lines."""
+    return bool(TRACEPOINT_CONTROL.match((message or "").strip()))
+
+
 # Real but non-actionable for a vendor ticket: keep in the local record,
 # never turn into a draft.
 BENIGN_FOR_TICKET = [
@@ -100,6 +116,8 @@ def classify(message: str, priority: int | None = None) -> str:
     text = (message or "").strip()
     if not text:
         return "info"
+    if tracepoint_control(text):
+        return "noise"
     if _match(NOISE_PATTERNS, text):
         return "noise"
     if _match(CRITICAL_PATTERNS, text):

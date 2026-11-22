@@ -628,6 +628,9 @@ def _draft(issue: dict, bundle: dict | None, identity: dict, consent: bool) -> t
         title = f"{title} [{fault_tag}]"
     rows = issue["rows"]
     if issue.get("kind") == "crash":
+        # The producer owns the configured/involved distinction in its context.
+        # Keep it verbatim: absence of crash affinity is not evidence that a
+        # retired or offline fault core was uninvolved.
         example, fault = _crash_evidence(issue)
     else:
         example = ""

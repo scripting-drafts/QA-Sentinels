@@ -1,7 +1,7 @@
 # QA Sentinels rules and checks
 
 This register describes every finding rule and operational check implemented by
-QA Sentinels `1.4.3`. Rules are code, not policy prose: the linked module is the
+QA Sentinels `1.4.4`. Rules are code, not policy prose: the linked module is the
 authoritative implementation.
 
 ## Severity model
@@ -23,7 +23,7 @@ Implemented in `sentinels/detect.py`.
 
 | Rule | Severity | Trigger |
 |---|---|---|
-| `kernel.hardware` | critical | MCE, machine check, hardware error, EDAC, or RAS message |
+| `kernel.hardware` | critical | MCE, machine check, hardware error, EDAC, or RAS message; rasdaemon tracepoint enable/disable status lines are excluded |
 | `kernel.oops` | critical | Kernel panic, oops, BUG, general protection fault, soft/hard lockup, hung task, or watchdog BUG |
 | `memory.oom` | critical | Out-of-memory or OOM-kill message |
 | `gpu.xid` | critical | NVIDIA Xid or GPU has fallen off the bus |

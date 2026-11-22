@@ -67,6 +67,18 @@ class ClassificationTests(unittest.TestCase):
     def test_xorg_info_is_noise(self):
         self.assertEqual(classify.classify("(--) NVIDIA(GPU-0): DFP-0: disconnected"), "noise")
 
+    def test_rasdaemon_tracepoint_control_is_noise(self):
+        for message in (
+            "rasdaemon: mce:mce_record event enabled",
+            "rasdaemon: mce:mce_record event disabled",
+            "rasdaemon: Enabled event mce:mce_record",
+            "Enabled event mce:mce_record",
+            "Enabled event cxl:cxl_poison",
+            "rasdaemon: cxl:cxl_aer_uncorrectable_error event enabled",
+        ):
+            with self.subTest(message=message):
+                self.assertEqual(classify.classify(message, 4), "noise")
+
     def test_plain_failure_is_error(self):
         self.assertEqual(classify.classify("Failed to start unit: input/output error"), "error")
 
@@ -213,6 +225,38 @@ class TicketCorrelationTests(unittest.TestCase):
         self.assertIn("mozilla", vendors)
         self.assertIn("hardware", vendors)
 
+    def test_draft_preserves_producer_fault_core_context(self):
+        from sentinels import tickets
+        from sentinels.util import iso
+
+        conn = self._conn()
+        conn.execute("DELETE FROM crashes")
+        conn.execute(
+            "INSERT INTO crashes(ts,pid,comm,exe,sig,corefile,cpus_allowed,"
+            "faultcore_involved,context,fingerprint)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (
+                iso(), 1, "rasdaemon", "", "mce", "present", "",
+                None,
+                "incident=x\n"
+                "fault_core=fault core (CPUs 2,8; seed CPU 2) mode=retired\n"
+                "matched_cpus=[] event_cpus=[]\n"
+                "rasdaemon: mce:mce_record event enabled",
+                "rasdaemon-tp",
+            ),
+        )
+        retired = {"present": None, "state": "retired", "logical": [],
+                   "physical_id": None, "configured": [2, 8],
+                   "degraded": [2, 8]}
+        issues = tickets._collect_issues(conn, days=7)
+        issue = next(i for i in issues if i["vendor"] == "canonical-kernel")
+        with mock.patch.object(tickets.faultcore, "topology",
+                               return_value=retired), \
+             mock.patch.object(tickets, "held_context", return_value={}):
+            _title, body = tickets._draft(issue, None, {}, False)
+        self.assertIn("fault_core=fault core (CPUs 2,8", body)
+        self.assertNotIn("fault_core=unattributed", body)
+
     def test_draft_summarizes_unavailable_faultcore_and_withholds_identity(self):
         from sentinels import tickets
 
@@ -358,6 +402,29 @@ class LayerTests(unittest.TestCase):
         for expected in ("crash.faultcore", "kernel.hardware", "memory.low",
                          "memory.pressure", "io.pressure", "thermal.high"):
             self.assertIn(expected, rules)
+
+    def test_rasdaemon_tracepoint_control_is_not_a_hardware_finding(self):
+        from sentinels import detect
+
+        conn = self._conn()
+        for index, message in enumerate((
+            "rasdaemon: mce:mce_record event enabled",
+            "Enabled event cxl:cxl_poison",
+            "mce: [Hardware Error]: CPU 2: Machine Check",
+        )):
+            conn.execute(
+                "INSERT INTO events(ts,boot_id,source,severity,unit,pid,comm,"
+                "message,fingerprint,raw) VALUES('2026-11-20T12:00:00Z','b',"
+                "'kernel','critical','kernel',1,'kernel',?,?,'{}')",
+                (message, f"tp-{index}"),
+            )
+        findings = detect._event_findings(conn, "1970-01-01T00:00:00Z")
+        hardware = [
+            finding for finding in findings if finding["rule"] == "kernel.hardware"
+        ]
+        self.assertEqual(len(hardware), 1)
+        self.assertIn("Hardware Error", hardware[0]["detail"])
+        self.assertNotIn("mce_record", hardware[0]["detail"])
 
     def test_noncritical_kernel_warnings_become_findings(self):
         from sentinels import detect

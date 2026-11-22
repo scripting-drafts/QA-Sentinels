@@ -1,3 +1,18 @@
+qa-sentinels (1.4.4) jammy; urgency=medium
+
+  * Treat rasdaemon tracepoint enable/disable status lines as control-plane
+    noise, so "mce:mce_record event enabled" no longer creates a critical
+    kernel.hardware finding or a Canonical kernel ticket.
+  * Keep the exclusion anchored to the tracepoint management syntax; real MCE
+    records and CXL event payloads keep their existing handling.
+  * Filter stale event rows at finding time and add regression tests for MCE
+    and CXL control lines.
+  * Keep the producer's fault_core context verbatim in tickets; absence of
+    crash affinity is not evidence that a retired or offline core was
+    uninvolved.
+
+ -- Gerard Sala <creative.gsp@gmail.com>  Sun, 22 Nov 2026 14:40:00 +0100
+
 qa-sentinels (1.4.3) jammy; urgency=medium
 
   * Mark Ubuntu 26.10 (stonking) as an untested preview while keeping package
