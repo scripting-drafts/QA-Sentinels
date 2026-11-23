@@ -1,3 +1,16 @@
+qa-sentinels (1.4.5) jammy; urgency=medium
+
+  * Embed raw occurrence context in ticket drafts and evidence/trace.md:
+    at least 90 lines per source around the fault, growing while the
+    surrounding journal, crash or triage records remain correlated.
+  * Include both the bundle snapshot and the current triage case, with
+    source paths, line or record ranges and hashes; do not summarise trace
+    files and do not cap the total ticket addition.
+  * Resolve redacted bundle paths by basename under the evidence root and
+    keep all reads inside the evidence and triage directories.
+
+ -- Gerard Sala <creative.gsp@gmail.com>  Mon, 23 Nov 2026 16:32:06 +0100
+
 qa-sentinels (1.4.4) jammy; urgency=medium
 
   * Treat rasdaemon tracepoint enable/disable status lines as control-plane

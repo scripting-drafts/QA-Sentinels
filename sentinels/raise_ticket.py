@@ -17,7 +17,8 @@ Layout (one directory per ticket, never a flat pile):
         ticket.md            the redacted draft, ready to post
         HOWTO.md             what to do with it, and what not to omit
         evidence/logs.json   the exact observations behind it (redacted)
-        evidence/trace.md    signature → events → stops → correlation → draft
+        evidence/trace.md    signature → events → stops → correlation → draft,
+                             plus raw occurrence context from the same sources
         evidence/manifest.json  hashes, provenance, scores
         evidence/*.jsonl     append-only audit records
 
@@ -36,7 +37,7 @@ import json
 import re
 import shutil
 
-from . import boot, classify, config, correlate, report, tickets, trace, util
+from . import boot, classify, config, correlate, occurrence, report, tickets, trace, util
 from .util import iso, sha256_text, utcnow
 
 # Failures of the environment, not of the component. A vendor cannot fix DNS,
@@ -290,7 +291,17 @@ def _already_staged(directory, issue: dict, bucket: str = "raise") -> bool:
         return False
     required = ("ticket.md", "HOWTO.md", "evidence/manifest.json",
                 f"evidence/{EVIDENCE_LOGS}", "evidence/trace.md")
-    return all((directory / rel).exists() for rel in required)
+    if not all((directory / rel).exists() for rel in required):
+        return False
+    try:
+        ticket = (directory / "ticket.md").read_text(
+            encoding="utf-8", errors="replace")
+        trace = (directory / "evidence" / "trace.md").read_text(
+            encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    # One-time refresh of tickets staged before raw occurrence context existed.
+    return "### Occurrence context" in ticket and "## Occurrence context" in trace
 
 
 def _staged_summary(directory, issue: dict, verdict: dict,
@@ -554,6 +565,8 @@ def stage(conn, draft: dict, issue: dict, verdict: dict, bundle: dict | None,
         reason="draft classified for " + str(issue.get("vendor") or "an unknown vendor"),
         score=f"{verdict.get('score')}/{verdict.get('max_score')}",
     )
+    raw_context = occurrence.ticket_context(issue, bundle, conn)
+    ticket_text = occurrence.embed_context(ticket_text, raw_context)
     hashes["ticket.md"] = _write(
         directory / "ticket.md",
         _ticket_with_lifecycle(ticket_text, directory),
@@ -569,8 +582,14 @@ def stage(conn, draft: dict, issue: dict, verdict: dict, bundle: dict | None,
     traced = trace.render(conn, issue["signature"], limit=200)
     if shown != issue["signature"]:
         traced = [line.replace(issue["signature"], shown) for line in traced]
-    trace_text = util.redact("\n".join(traced))
-    hashes["evidence/trace.md"] = _write(directory / "evidence" / "trace.md", trace_text + "\n")
+    trace_text = "\n".join(traced)
+    if raw_context:
+        trace_text = (trace_text.rstrip()
+                      + "\n\n## Occurrence context\n\n"
+                      + "\n".join(raw_context))
+    trace_text = util.redact(trace_text)
+    hashes["evidence/trace.md"] = _write(
+        directory / "evidence" / "trace.md", trace_text + "\n")
 
     stop_ids = sorted({
         row["boot_id"] for row in rows if row.get("boot_id")
@@ -1067,7 +1086,8 @@ Viability: {verdict['score']}/{verdict['max_score']} checks passed.
 Vendor: **{issue['vendor']}** — {issue['kind']} cluster `{issue['key']}`
 
 1. Read `ticket.md`. It is already redacted; do not add host or identity data.
-2. Check `evidence/logs.json` and `evidence/trace.md` still describe what you saw.
+2. Read `ticket.md`; its Occurrence context embeds the raw surrounding lines.
+   Check `evidence/logs.json` and `evidence/trace.md` still describe what you saw.
 3. Attach the evidence bundle named in `evidence/manifest.json` (verify its SHA-256).
 4. Post through the vendor channel in `ticket.md`. Submission is manual by design.
 5. Keep `evidence/manifest.json`: it is what makes this ticket auditable later.

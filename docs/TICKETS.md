@@ -65,6 +65,33 @@ optional external crash feed fills it at ingest with
 process keeps its project label.  `qa query --category crashes` and reports
 show that stored label.
 
+## Occurrence context
+
+`tickets.py` embeds raw occurrence context in the ticket's `## Evidence`
+section and in `evidence/trace.md`. Context is not a side file: it is the real
+lines or records around the exact fingerprint, stack frame, case key or event
+time, copied from the source that observed it.
+
+- Each source contributes at least 90 lines around the anchor.
+- The window grows in 90-line blocks while the boundary remains in the same
+  correlated section, fenced block, boot, unit or event-time chain.
+- Both the bundle snapshot and the current `triage/faultcore/case-*.md` are
+  included, with paths, line/record ranges and SHA-256 values.
+- Correlation tickets resolve their own recorded boots and time windows, so a
+  newer startup bundle containing the same message on a later boot cannot
+  replace the original occurrence context.
+- Trace files are embedded raw; they are never summarised.
+- There is no total ticket addition cap.
+
+A missing match is stated explicitly. The generator never substitutes a
+similar case or invents surrounding lines. The block is part of `ticket.md`, so
+opening the ticket — a double-click in the dashboard — shows the context
+without a separate viewer or command.
+
+Both `tickets._draft` and `raise_ticket.stage` apply the block. A staged ticket
+without the block in `ticket.md` and `evidence/trace.md` is treated as an old
+format and is rewritten on the next raise pass.
+
 ## Crash evidence
 
 `crash.digest` keeps the header (size, pid, signal, timestamp, command line,

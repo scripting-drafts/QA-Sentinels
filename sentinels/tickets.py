@@ -9,7 +9,7 @@ import os
 import re
 from datetime import timedelta
 
-from . import classify, config, crash, faultcore, correlate, db, holds, packages
+from . import classify, config, crash, faultcore, correlate, db, holds, occurrence, packages
 from .util import (
     human_bytes, identity_for_ticket, iso, read_text, redact, run, sha256_text, utcnow,
 )
@@ -613,7 +613,8 @@ def _routing_bullets(issue: dict, component: str,
     return [f"- {note}" for note in notes]
 
 
-def _draft(issue: dict, bundle: dict | None, identity: dict, consent: bool) -> tuple[str, str]:
+def _draft(issue: dict, bundle: dict | None, identity: dict, consent: bool,
+           conn=None) -> tuple[str, str]:
     meta = classify.VENDOR_META.get(issue["vendor"], classify.VENDOR_META["local"])
     component = classify.component_for_issue(issue)
     topo = faultcore.topology()
@@ -746,6 +747,9 @@ def _draft(issue: dict, bundle: dict | None, identity: dict, consent: bool) -> t
         lines += [
             "- No bundle generated yet. Run `~/QA-Sentinels/bin/qa evidence --reason ticket` and attach it.",
         ]
+    context = occurrence.ticket_context(issue, bundle, conn)
+    if context:
+        lines += ["", "### Occurrence context", "", *context]
     lines += [
         "",
         "## Requested action",
@@ -788,7 +792,7 @@ def generate(conn, days: int = 7, include_local: bool = False, max_tickets: int 
     keep: set[str] = set()
     conn.execute("DELETE FROM ticket_drafts")
     for issue in selected:
-        title, body = _draft(issue, bundle, identity, consent)
+        title, body = _draft(issue, bundle, identity, consent, conn)
         vendor = issue["vendor"]
         slug = re.sub(r"[^a-z0-9]+", "-", issue["signature"].lower()).strip("-")[:60]
         path = config.DRAFT_DIR / f"{vendor}-{slug}-{issue['key'][:8]}.md"

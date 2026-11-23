@@ -1,7 +1,7 @@
 # QA Sentinels rules and checks
 
 This register describes every finding rule and operational check implemented by
-QA Sentinels `1.4.4`. Rules are code, not policy prose: the linked module is the
+QA Sentinels `1.4.5`. Rules are code, not policy prose: the linked module is the
 authoritative implementation.
 
 ## Severity model
