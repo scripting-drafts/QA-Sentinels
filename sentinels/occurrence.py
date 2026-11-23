@@ -23,6 +23,11 @@ MIN_CONTEXT_LINES = 90
 GROWTH_STEP = 90
 CORRELATION_GAP_S = 300
 
+# Narrow scope: these findings describe whether the hardware layer could run
+# its probes at all. Other hardware findings already carry their own raw data.
+HARDWARE_PROBE_RULES = {"hardware.coverage", "hardware.vendor.missing"}
+_REPORTED = re.compile(r"\b([a-z][\w-]*)\s*=\s*([\w.-]+)")
+
 _HEADING = re.compile(r"^#{2,6}\s")
 _FENCE = re.compile(r"^\s*`{3,}")
 _STACK = re.compile(r"^\s*#\d+\s")
@@ -355,6 +360,7 @@ def _tokens(issue: dict, row: dict | None = None) -> list[str]:
         str(row.get("sig") or ""),
         str(row.get("rule") or ""),
         str(row.get("subject") or ""),
+        str(row.get("detail") or ""),
         message[0][:160] if message else "",
     ]
     return [value for value in values if value]
@@ -469,7 +475,8 @@ def _finding_context(issue: dict, bundle_dir: Path | None) -> list[str]:
             continue
         window = _text_window(text, _tokens(issue, row))
         if window is None:
-            continue
+            raw = text.splitlines() or [text]
+            window = (raw, 0, len(raw), 0)
         source_lines, start, end, _anchor = window
         body = "\n".join(
             f"{number:>6} | {redact(line)}"
@@ -764,6 +771,155 @@ def _event_context(issue: dict, bundle_dir: Path | None, conn) -> list[str]:
     return lines
 
 
+def _hardware_probe_issue(issue: dict) -> bool:
+    """True only for findings that report whether hardware probes could run."""
+    for row in issue.get("rows") or []:
+        rule = str(row.get("rule") or "")
+        if rule in HARDWARE_PROBE_RULES:
+            return True
+    signature = str(issue.get("signature") or "").lower()
+    return signature.startswith("hardware.coverage") or signature.startswith(
+        "hardware.vendor.missing")
+
+
+def _reported_limits(issue: dict) -> dict[str, str]:
+    limits: dict[str, str] = {}
+    for row in issue.get("rows") or []:
+        text = " ".join(
+            str(row.get(key) or "") for key in ("detail", "message")
+        )
+        for match in _REPORTED.finditer(text):
+            limits[match.group(1)] = match.group(2)
+    return limits
+
+
+def _parse_sources(value) -> dict[str, str]:
+    if isinstance(value, dict):
+        return {str(key): str(item) for key, item in value.items()}
+    if not value:
+        return {}
+    try:
+        data = json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(key): str(item) for key, item in data.items()}
+
+
+def _hardware_runs(issue: dict, bundle_dir: Path | None, conn) -> list[dict]:
+    runs: list[dict] = []
+    if bundle_dir:
+        data = _load_json(bundle_dir / "hardware.json")
+        if isinstance(data, dict) and isinstance(data.get("run"), dict):
+            run = dict(data["run"])
+            run["_source"] = "bundle"
+            run["_path"] = bundle_dir / "hardware.json"
+            runs.append(run)
+    if conn is not None:
+        try:
+            rows = conn.execute(
+                "SELECT * FROM hardware_runs ORDER BY id DESC LIMIT 48"
+            ).fetchall()
+        except Exception:  # noqa: BLE001 - an old database may lack hardware_runs
+            rows = []
+        for record in rows:
+            run = dict(record)
+            run["_source"] = "database"
+            run["_path"] = None
+            runs.append(run)
+    seen: set = set()
+    unique: list[dict] = []
+    for run in runs:
+        key = (run.get("id"), run.get("ts"))
+        if key in seen:
+            continue
+        seen.add(key)
+        run["_sources"] = _parse_sources(run.get("sources"))
+        unique.append(run)
+    unique.sort(
+        key=lambda run: (str(run.get("ts") or ""), int(run.get("id") or 0)),
+        reverse=True,
+    )
+    return unique
+
+
+def _hardware_detail_window(text: str, tokens: list[str]):
+    lines = text.splitlines()
+    if not lines:
+        return None
+    anchor = _anchor_index(lines, tokens)
+    if anchor is None:
+        return None
+    start = max(0, anchor - MIN_CONTEXT_LINES)
+    end = min(len(lines), anchor + MIN_CONTEXT_LINES + 1)
+    section_start = 0
+    for index in range(anchor, -1, -1):
+        if lines[index].startswith("# ") and not lines[index].startswith("## "):
+            section_start = index
+            break
+    section_end = len(lines)
+    for index in range(anchor + 1, len(lines)):
+        if lines[index].startswith("# ") and not lines[index].startswith("## "):
+            section_end = index
+            break
+    return lines, min(start, section_start), max(end, section_end)
+
+
+def _hardware_context(issue: dict, bundle_dir: Path | None, conn) -> list[str]:
+    reported = _reported_limits(issue)
+    runs = _hardware_runs(issue, bundle_dir, conn)
+    if reported:
+        matched = [
+            run for run in runs
+            if all(run["_sources"].get(key) == value
+                   for key, value in reported.items())
+        ]
+    else:
+        matched = runs[:1]
+    if not matched:
+        return []
+    limits_text = ", ".join(
+        f"`{key}={value}`" for key, value in sorted(reported.items())
+    ) or "none recorded"
+    lines: list[str] = []
+    for run in matched[:2]:
+        run_id = run.get("id", "?")
+        status = run.get("status") or "unknown"
+        stamp = run.get("ts") or "unknown"
+        sources = run["_sources"]
+        source_text = ", ".join(
+            f"`{key}={value}`" for key, value in sorted(sources.items())
+        ) or "none recorded"
+        if run.get("_source") == "bundle":
+            path = run.get("_path")
+            source = f"`{_display_path(path)}` run `{run_id}`"
+            digest = _digest(path)
+        else:
+            source = f"`live database:hardware_runs` run `{run_id}`"
+            digest = "-"
+        lines += [
+            f"#### Hardware probe run {run_id} — {status}",
+            f"Source: {source} at `{stamp}` (sha256 `{digest}`)",
+            f"Reported limitation: {limits_text}",
+            f"Run sources: {source_text}",
+            "",
+        ]
+        detail = str(run.get("detail") or "")
+        window = _hardware_detail_window(
+            detail, ["Permission denied", "smartctl", "needs-root", "storage"])
+        if window is None:
+            continue
+        window_lines, start, end = window
+        body = "\n".join(
+            f"{number:>6} | {redact(line)}"
+            for number, line in enumerate(window_lines[start:end], start=start + 1)
+        )
+        fence = _fence(body)
+        lines += [fence, body, fence, ""]
+    return lines
+
+
 def embed_context(text: str, context_lines: list[str]) -> str:
     """Insert or replace the occurrence block without duplicating it."""
     if not context_lines:
@@ -791,6 +947,8 @@ def ticket_context(issue: dict, bundle: dict | None, conn=None) -> list[str]:
         lines += _case_context(case, issue, bundle_dir)
     lines += _crash_context(issue, bundle_dir)
     lines += _finding_context(issue, bundle_dir)
+    if _hardware_probe_issue(issue):
+        lines += _hardware_context(issue, bundle_dir, conn)
     lines += _event_context(issue, bundle_dir, conn)
     if not lines:
         return [

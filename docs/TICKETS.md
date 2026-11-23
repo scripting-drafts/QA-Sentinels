@@ -92,6 +92,15 @@ Both `tickets._draft` and `raise_ticket.stage` apply the block. A staged ticket
 without the block in `ticket.md` and `evidence/trace.md` is treated as an old
 format and is rewritten on the next raise pass.
 
+### Hardware probe coverage
+
+`hardware.coverage` and `hardware.vendor.missing` report whether the hardware
+layer could run its probes. Their context includes the matching finding and the
+hardware run that produced it: the source map, the reported limitation, and
+the raw probe detail around `smartctl` / `Permission denied`. The limitation is
+shown explicitly, for example `storage=needs-root`. Other hardware findings do
+not receive this probe-run adapter.
+
 ## Crash evidence
 
 `crash.digest` keeps the header (size, pid, signal, timestamp, command line,

@@ -1,3 +1,14 @@
+qa-sentinels (1.4.6) jammy; urgency=medium
+
+  * Narrow occurrence context for hardware probe coverage findings:
+    hardware.coverage and hardware.vendor.missing now include the matching
+    finding, the hardware run source map, and the raw smartctl detail around
+    Permission denied. Show the reported limitation explicitly, including
+    storage=needs-root. Other hardware findings do not receive the probe-run
+    adapter.
+
+ -- Gerard Sala <creative.gsp@gmail.com>  Mon, 23 Nov 2026 17:36:00 +0100
+
 qa-sentinels (1.4.5) jammy; urgency=medium
 
   * Embed raw occurrence context in ticket drafts and evidence/trace.md:

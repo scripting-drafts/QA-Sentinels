@@ -206,6 +206,92 @@ class CorrelationContextTests(unittest.TestCase):
         conn.close()
 
 
+class HardwareProbeContextTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.evidence = self.root / "evidence"
+        self.bundle = self.evidence / "20261123-144204-startup"
+        self.bundle.mkdir(parents=True)
+        self.patches = [
+            mock.patch.object(config, "ROOT", self.root),
+            mock.patch.object(config, "EVIDENCE_DIR", self.evidence),
+        ]
+        for patch in self.patches:
+            patch.start()
+
+    def tearDown(self):
+        for patch in reversed(self.patches):
+            patch.stop()
+        self.temp.cleanup()
+
+    def _write_bundle(self):
+        (self.bundle / "findings.json").write_text(json.dumps([{
+            "id": 267,
+            "fingerprint": "hardware|coverage|hardware.coverage|hardware-sources",
+            "rule": "hardware.coverage",
+            "subject": "hardware-sources",
+            "detail": "hardware sources limited: storage=needs-root",
+            "ts": "2026-11-06T20:38:55Z",
+            "last_ts": "2026-11-23T15:30:03Z",
+        }]), encoding="utf-8")
+        detail = "\n".join([
+            "# storage",
+            "# smartctl nvme0n1",
+            "{",
+            '  "smartctl": {',
+            '    "messages": [{"string": "Smartctl open device: /dev/nvme0n1 failed: Permission denied"}],',
+            '    "exit_status": 2',
+            "  }",
+            "}",
+            "# gpu",
+            "gpu data",
+        ])
+        (self.bundle / "hardware.json").write_text(json.dumps({
+            "run": {
+                "id": 735,
+                "ts": "2026-11-20T13:19:02Z",
+                "status": "partial",
+                "sources": '{"storage": "needs-root", "gpu": "ok"}',
+                "detail": detail,
+            },
+            "items": [],
+        }), encoding="utf-8")
+
+    def _issue(self, rule="hardware.coverage"):
+        return {
+            "key": "key", "vendor": "hardware",
+            "signature": f"{rule}: hardware-sources",
+            "display": "hardware.coverage: hardware-sources: hardware sources limited: storage=needs-root",
+            "kind": "finding",
+            "rows": [{
+                "id": 267,
+                "fingerprint": "hardware|coverage|hardware.coverage|hardware-sources",
+                "rule": rule,
+                "subject": "hardware-sources",
+                "detail": "hardware sources limited: storage=needs-root",
+                "ts": "2026-11-06T20:38:55Z",
+                "last_ts": "2026-11-23T15:30:03Z",
+            }],
+        }
+
+    def test_hardware_coverage_shows_probe_sources_and_raw_detail(self):
+        self._write_bundle()
+        text = "\n".join(occurrence.ticket_context(
+            self._issue(), {"path": str(self.bundle)}))
+        self.assertIn("Finding 267", text)
+        self.assertIn("storage=needs-root", text)
+        self.assertIn("Hardware probe run 735", text)
+        self.assertIn("Run sources:", text)
+        self.assertIn("Permission denied", text)
+
+    def test_non_probe_hardware_finding_does_not_add_run_context(self):
+        self._write_bundle()
+        text = "\n".join(occurrence.ticket_context(
+            self._issue("hardware.apei.pstore"), {"path": str(self.bundle)}))
+        self.assertNotIn("Hardware probe run", text)
+
+
 class TicketContextTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
