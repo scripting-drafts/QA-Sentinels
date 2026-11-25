@@ -409,7 +409,11 @@ def collect_issues(conn, days: int = 7, include_local: bool = False) -> list[dic
 
     def add(vendor: str, signature: str, kind: str, row: dict) -> None:
         key = sha256_text(f"{vendor}|{kind}|{signature}")[:20]
-        n = int(row.get("count") or 1)
+        # Finding ``count`` is the number of collection runs that re-observed
+        # the same condition, not the number of independent events. One finding
+        # row is one observation; recurring evidence is represented by distinct
+        # rows (for example one pstore archive per panic).
+        n = 1 if kind == "finding" else int(row.get("count") or 1)
         first = row.get("ts")
         last = row.get("last_ts") or row.get("ts")
         issue = issues.setdefault(
@@ -467,8 +471,12 @@ def collect_issues(conn, days: int = 7, include_local: bool = False) -> list[dic
         )
         add(vendor, sig, "finding", row)
 
-    # dedicated hardware ticket: fault-core correlation must reach the platform vendor
-    faultcore_crashes = [c for c in crashes if c.get("faultcore_involved") == 1]
+    # dedicated hardware ticket: fault-core correlation must reach the platform
+    # vendor. A verdict without a recorded mask is unknown, not involved.
+    faultcore_crashes = [
+        c for c in crashes
+        if c.get("faultcore_involved") == 1 and str(c.get("cpus_allowed") or "").strip()
+    ]
     if faultcore_crashes:
         key = sha256_text("hardware|faultcore-correlation")[:20]
         issues[key] = {

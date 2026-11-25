@@ -92,6 +92,24 @@ Both `tickets._draft` and `raise_ticket.stage` apply the block. A staged ticket
 without the block in `ticket.md` and `evidence/trace.md` is treated as an old
 format and is rewritten on the next raise pass.
 
+### Probe provenance
+
+A ticket may only cite a probe value at the time and identity it actually
+describes. The raise gate enforces three boundaries:
+
+- **Death window** — events before `boot_start + QA_CORRELATE_SETTLE_S` are
+  startup, not pre-stop evidence. Boots shorter than `QA_CORRELATE_MIN_WINDOW_S`
+  contribute no correlation clusters.
+- **Stop verdict** — recovery/rescue exits and explicit reboot/poweroff targets
+  are clean. Maintenance boots never count toward the repeat rate.
+- **Crash affinity** — only a process sample inside `QA_PROC_MATCH_WINDOW_S`
+  that names the same executable may supply a mask. Stale samples and PID reuse
+  produce `unknown`, never a fault-core correlation.
+
+Per-init notices are not ticketworthy. Finding counts are distinct rows, not
+collection runs. `hardware.coverage` and `hardware.vendor.missing` are coverage
+state and are never staged as vendor tickets.
+
 ### Hardware probe coverage
 
 `hardware.coverage` and `hardware.vendor.missing` report whether the hardware
