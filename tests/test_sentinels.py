@@ -995,6 +995,8 @@ class LayerLogViewTests(unittest.TestCase):
             path.write_text("layer one line\n", encoding="utf-8")
             output = io.StringIO()
             with mock.patch.object(
+                logs, "unit_matches_root", return_value=True,
+            ), mock.patch.object(
                 logs, "journal_tail",
                 return_value=["2026-11-06T10:00:00Z layer two line"],
             ), contextlib.redirect_stdout(output):
@@ -1004,6 +1006,28 @@ class LayerLogViewTests(unittest.TestCase):
         self.assertIn("layer one line", text)
         self.assertIn("layer 2", text)
         self.assertIn("layer two line", text)
+
+    def test_all_layers_reports_missing_layer_two(self):
+        import contextlib
+        import io
+        import pathlib
+        import tempfile
+        from unittest import mock
+        from sentinels import logs
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "cron.log"
+            path.write_text("layer one line\n", encoding="utf-8")
+            output = io.StringIO()
+            with mock.patch.object(
+                logs, "unit_matches_root", return_value=False,
+            ), contextlib.redirect_stdout(output):
+                logs.all_layers(path, lines=5, color=False)
+        text = output.getvalue()
+        self.assertIn("layer 1", text)
+        self.assertIn("layer one line", text)
+        self.assertIn("not deployed", text)
+        self.assertNotIn("layer two line", text)
 
 
 class NotificationFlowTests(unittest.TestCase):
